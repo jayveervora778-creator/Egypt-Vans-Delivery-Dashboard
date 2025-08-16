@@ -6,13 +6,13 @@ module.exports = {
     cwd: '/home/user/webapp_fresh',
     env: {
       'PYTHONPATH': '/home/user/webapp_fresh',
-      'STREAMLIT_DASH_PASSWORD': 'vans2025', // Dashboard password
+      'STREAMLIT_DASH_PASSWORD': 'vans2025',
       'STREAMLIT_DISABLE_DATAFRAME_ARROW_CONVERSION': '1'
     },
     instances: 1,
     autorestart: true,
     watch: false,
     max_memory_restart: '1G',
-    interpreter: 'none' // Don't use PM2's built-in interpreter detection
+    interpreter: 'none'
   }]
 };
