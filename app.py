@@ -7,6 +7,11 @@ import numpy as np
 
 st.set_page_config(page_title="Vans Interactive Dashboard", layout="wide", page_icon="🚐")
 
+# Disable PyArrow conversion in Streamlit to prevent conversion errors
+import streamlit as st
+import os
+os.environ['STREAMLIT_DISABLE_DATAFRAME_ARROW_CONVERSION'] = '1'
+
 # Custom CSS for better styling
 st.markdown("""
 <style>
@@ -75,8 +80,7 @@ def _flatten_columns(columns):
             flattened.append(str(col).strip())
     return flattened
 
-# Temporarily disable caching to avoid PyArrow issues with mixed data types
-# @st.cache_data(show_spinner="Loading data...")
+# Simple data loading without caching to avoid PyArrow issues
 def load_excel_file(path_or_bytes):
     """Load Excel file with proper survey data structure support"""
     try:
@@ -247,7 +251,7 @@ def load_excel_file(path_or_bytes):
 # ---------- Data Loading ----------
 st.subheader("📊 Data Source")
 
-DEFAULT_CSV_PATH = "Vans_data_cleaned.csv"  # Use the cleaned CSV file
+DEFAULT_CSV_PATH = "Vans_data_ultra_clean.csv"  # Use the ultra-clean CSV file
 DEFAULT_XLSX_PATH = "Vans_data_raw_new.xlsx"  # Use the corrected file
 FALLBACK_XLSX_PATH = "Vans data for dashboard.xlsx"  # Keep as fallback
 data_choice = st.radio(
@@ -259,16 +263,16 @@ data_choice = st.radio(
 df_all = pd.DataFrame()
 
 if data_choice == "📁 Use included sample file":
-    # Try cleaned CSV first (avoids PyArrow issues)
+    # Load ultra-clean CSV (guaranteed PyArrow-safe)
     if os.path.exists(DEFAULT_CSV_PATH):
         try:
-            df_all = pd.read_csv(DEFAULT_CSV_PATH)
+            df_all = pd.read_csv(DEFAULT_CSV_PATH)  # Can load normally since it's ultra-clean
             if not df_all.empty:
-                st.success(f"✅ Loaded clean Vans survey data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
+                st.success(f"✅ Loaded ultra-clean Vans survey data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
             else:
                 df_all = pd.DataFrame()
         except Exception as e:
-            st.warning(f"⚠️ Issue loading cleaned CSV: {str(e)}")
+            st.warning(f"⚠️ Issue loading ultra-clean CSV: {str(e)}")
             df_all = pd.DataFrame()
     
     # Fallback to Excel if CSV fails
@@ -297,7 +301,19 @@ if data_choice == "📤 Upload your own Excel file" or df_all.empty:
     
     if uploaded_file is not None:
         if uploaded_file.name.endswith('.csv'):
-            df_all = pd.read_csv(uploaded_file)
+            df_all = pd.read_csv(uploaded_file, dtype=str)  # Force all to string initially
+            # Clean and convert numeric columns safely
+            if not df_all.empty:
+                for col in df_all.columns:
+                    df_all[col] = df_all[col].replace('nan', None)
+                numeric_indicators = ['age', 'year', 'egp', 'days', 'hours', 'deliveries', 'income', 'salary', 'allowance']
+                for col in df_all.columns:
+                    col_lower = col.lower()
+                    if any(indicator in col_lower for indicator in numeric_indicators):
+                        try:
+                            df_all[col] = pd.to_numeric(df_all[col], errors='coerce')
+                        except:
+                            pass
         else:
             data_bytes = io.BytesIO(uploaded_file.read())
             df_all = load_excel_file(data_bytes)
@@ -345,6 +361,18 @@ for col in df_all.columns:
 if problematic_cols:
     df_all = df_all.drop(problematic_cols, axis=1)
     st.info(f"📝 Removed {len(problematic_cols)} sparse/empty columns: {', '.join(problematic_cols[:3])}{'...' if len(problematic_cols) > 3 else ''}")
+
+# Create a display-safe version for st.dataframe (all strings to avoid PyArrow issues)
+def make_display_safe(df):
+    """Convert dataframe to display-safe format (all strings) to avoid PyArrow conversion errors"""
+    display_df = df.copy()
+    for col in display_df.columns:
+        try:
+            # Convert everything to string for display, but preserve NaN as empty string
+            display_df[col] = display_df[col].astype(str).replace('nan', '').replace('<NA>', '')
+        except:
+            pass
+    return display_df
 
 df_view = df_all.copy()
 
@@ -443,11 +471,14 @@ with kpi_col1:
 with kpi_col2:
     if age_col:
         try:
-            # More robust age calculation
-            age_series = df_view[age_col]
+            # Robust age calculation
+            age_series = df_view[age_col].copy()
             
-            # Convert to numeric if not already (handle any string ages)
+            # More aggressive conversion to handle any data type issues
             if not pd.api.types.is_numeric_dtype(age_series):
+                # Convert to string first, then numeric
+                age_series = age_series.astype(str)
+                age_series = age_series.replace('nan', np.nan)
                 age_series = pd.to_numeric(age_series, errors='coerce')
             
             # Calculate mean of non-null values
@@ -462,7 +493,7 @@ with kpi_col2:
             else:
                 st.metric("👥 Average Age", "No valid data")
         except Exception as e:
-            st.metric("👥 Average Age", f"Calculation error")
+            st.metric("👥 Average Age", "Calculation error")
     elif insurance_col:
         yes_responses = df_view[insurance_col].astype(str).str.contains('Yes|yes', na=False).mean() * 100
         st.metric(
@@ -770,7 +801,9 @@ with analysis_tab1:
                         st.write("**📊 Results Table**")
                         # Add padding to align with other sections
                         st.write("")
-                        st.dataframe(result, use_container_width=True, height=280)
+                        # Convert to display-safe format to avoid PyArrow issues
+                        display_result = make_display_safe(result)
+                        st.dataframe(display_result, use_container_width=True, height=280)
                     
                     with col2:
                         if len(result) > 0:
@@ -1068,7 +1101,9 @@ with analysis_tab2:
             if emp_col and ins_col:
                 try:
                     crosstab = pd.crosstab(df_view[emp_col], df_view[ins_col], margins=True)
-                    st.dataframe(crosstab, use_container_width=True)
+                    # Convert to display-safe format to avoid PyArrow issues
+                    display_crosstab = make_display_safe(crosstab)
+                    st.dataframe(display_crosstab, use_container_width=True)
                     preset_executed = True
                 except Exception as e:
                     st.error(f"Analysis error: {str(e)}")
@@ -1079,7 +1114,9 @@ with analysis_tab2:
             if company_col and delivery_col:
                 try:
                     company_deliveries = df_view.groupby(company_col)[delivery_col].mean().reset_index()
-                    st.dataframe(company_deliveries, use_container_width=True)
+                    # Convert to display-safe format to avoid PyArrow issues
+                    display_company_deliveries = make_display_safe(company_deliveries)
+                    st.dataframe(display_company_deliveries, use_container_width=True)
                     fig = px.bar(company_deliveries, x=company_col, y=delivery_col, 
                                title=f"Average {delivery_col} by {company_col}")
                     st.plotly_chart(fig, use_container_width=True)
@@ -1094,7 +1131,9 @@ with analysis_tab2:
                 try:
                     fuel_analysis = df_view.groupby(company_col)[fuel_col].agg(['mean', 'sum', 'count']).reset_index()
                     fuel_analysis.columns = [company_col, 'Average Fuel Cost', 'Total Fuel Cost', 'Count']
-                    st.dataframe(fuel_analysis, use_container_width=True)
+                    # Convert to display-safe format to avoid PyArrow issues
+                    display_fuel_analysis = make_display_safe(fuel_analysis)
+                    st.dataframe(display_fuel_analysis, use_container_width=True)
                     fig = px.bar(fuel_analysis, x=company_col, y='Average Fuel Cost',
                                title="Average Fuel Costs by Company")
                     st.plotly_chart(fig, use_container_width=True)
@@ -1112,7 +1151,9 @@ with analysis_tab2:
                     df_temp['Age Group'] = pd.cut(df_temp[age_col], bins=[0, 25, 35, 45, 55, 100], 
                                                 labels=['18-25', '26-35', '36-45', '46-55', '55+'])
                     crosstab = pd.crosstab(df_temp['Age Group'], df_temp[emp_col], margins=True)
-                    st.dataframe(crosstab, use_container_width=True)
+                    # Convert to display-safe format to avoid PyArrow issues
+                    display_crosstab = make_display_safe(crosstab)
+                    st.dataframe(display_crosstab, use_container_width=True)
                     preset_executed = True
                 except Exception as e:
                     st.error(f"Analysis error: {str(e)}")
@@ -1135,12 +1176,16 @@ with analysis_tab2:
                         if df_view[col1].dtype == 'object' and df_view[col2].dtype == 'object':
                             # Cross-tabulation for categorical data
                             crosstab = pd.crosstab(df_view[col1], df_view[col2], margins=True)
-                            st.dataframe(crosstab, use_container_width=True)
+                            # Convert to display-safe format to avoid PyArrow issues
+                    display_crosstab = make_display_safe(crosstab)
+                    st.dataframe(display_crosstab, use_container_width=True)
                             preset_executed = True
                         elif df_view[col1].dtype == 'object' and pd.api.types.is_numeric_dtype(df_view[col2]):
                             # Group by analysis
                             grouped = df_view.groupby(col1)[col2].agg(['mean', 'count']).reset_index()
-                            st.dataframe(grouped, use_container_width=True)
+                            # Convert to display-safe format to avoid PyArrow issues
+                            display_grouped = make_display_safe(grouped)
+                            st.dataframe(display_grouped, use_container_width=True)
                             fig = px.bar(grouped, x=col1, y='mean', title=f"Average {col2} by {col1}")
                             st.plotly_chart(fig, use_container_width=True)
                             preset_executed = True
@@ -1373,8 +1418,10 @@ with analysis_tab3:
         
         # Display the responses
         if len(display_df) > 0:
+            # Convert to display-safe format to avoid PyArrow issues
+            safe_display_df = make_display_safe(display_df)
             st.dataframe(
-                display_df,
+                safe_display_df,
                 use_container_width=True,
                 hide_index=not show_index
             )
@@ -1696,7 +1743,9 @@ with summary_col1:
     if not df_view.empty:
         st.write("**Statistical Summary:**")
         numeric_summary = df_view.describe()
-        st.dataframe(numeric_summary, use_container_width=True)
+        # Convert to display-safe format to avoid PyArrow issues
+        safe_numeric_summary = make_display_safe(numeric_summary)
+        st.dataframe(safe_numeric_summary, use_container_width=True)
 
 with summary_col2:
     st.write("**Dataset Information:**")
@@ -1718,7 +1767,9 @@ with summary_col2:
 
 # ---------- Raw Data Viewer ----------
 with st.expander("🔍 View Raw Data", expanded=False):
-    st.dataframe(df_view, use_container_width=True)
+    # Convert to display-safe format to avoid PyArrow issues
+    safe_df_view = make_display_safe(df_view)
+    st.dataframe(safe_df_view, use_container_width=True)
     
     # Column information
     try:
@@ -1740,7 +1791,9 @@ with st.expander("🔍 View Raw Data", expanded=False):
         })
     
     st.write("**Column Information:**")
-    st.dataframe(col_info, use_container_width=True)
+    # Convert to display-safe format to avoid PyArrow issues
+    safe_col_info = make_display_safe(col_info)
+    st.dataframe(safe_col_info, use_container_width=True)
 
 # ---------- Footer ----------
 st.markdown("---")
