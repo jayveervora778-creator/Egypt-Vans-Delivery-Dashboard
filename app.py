@@ -1177,8 +1177,8 @@ with analysis_tab2:
                             # Cross-tabulation for categorical data
                             crosstab = pd.crosstab(df_view[col1], df_view[col2], margins=True)
                             # Convert to display-safe format to avoid PyArrow issues
-                    display_crosstab = make_display_safe(crosstab)
-                    st.dataframe(display_crosstab, use_container_width=True)
+                            display_crosstab = make_display_safe(crosstab)
+                            st.dataframe(display_crosstab, use_container_width=True)
                             preset_executed = True
                         elif df_view[col1].dtype == 'object' and pd.api.types.is_numeric_dtype(df_view[col2]):
                             # Group by analysis
