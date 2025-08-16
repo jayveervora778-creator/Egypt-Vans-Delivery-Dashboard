@@ -1,29 +1,28 @@
-# 🔗 Custom Short URLs for Vans Delivery Dashboard
+# 🔗 Mordor Intelligence - Vans Delivery Dashboard URLs
 
-## 🎯 **Your Dashboard Short URLs:**
+## 🏆 **FINAL BRANDED URLs (Mordor Intelligence):**
 
-### **Option 1: Is.gd Custom URLs (Recommended)**
-- **🚐 Main Dashboard**: https://is.gd/vansdash2025
-- **🇪🇬 Egypt Vans**: https://is.gd/egyvan  
-- **📊 Delivery Analytics**: https://is.gd/delivanalytics
+### **🌟 RECOMMENDED - FINAL URL:**
+# **https://is.gd/mordor_vans_egypt**
+*Official Mordor Intelligence Egypt Vans Delivery Dashboard*
 
-### **Option 2: V.gd Custom URL**
-- **📋 Vans Dashboard**: https://v.gd/vansdashboard
-
-### **Option 3: TinyURL (Auto-generated)**
-- **🔗 Basic Short URL**: https://tinyurl.com/25rb6hra
+### **Alternative Mordor Intelligence URLs:**
+- **📊 Analytics Focus**: https://is.gd/mordor_analytics
+- **🚐 Simple Dashboard**: https://is.gd/mordorvans  
+- **📋 Dashboard**: https://is.gd/mordordash
 
 ---
 
 ## 🔐 **Access Information:**
 - **Password**: `vans2025`
+- **Company**: Mordor Intelligence
 - **Original URL**: https://8501-i0g6gdomzm0959ky4z3cv-6532622b.e2b.dev
 
 ---
 
-## 🌟 **Recommended Short URL:**
-### **https://is.gd/vansdash2025**
-*Easy to remember and professional for sharing*
+## 🎯 **OFFICIAL FINAL URL:**
+### **https://is.gd/mordor_vans_egypt**
+*Professional Mordor Intelligence branded URL for business use*
 
 ---
 
