@@ -37,21 +37,40 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
-st.markdown("""
-<div class="dashboard-header">
-    <h1>🚐 Vans Data Interactive Dashboard</h1>
-    <p>Professional analytics for delivery operations data</p>
-</div>
-""", unsafe_allow_html=True)
+# Dashboard header with logout option
+col1, col2 = st.columns([4, 1])
+with col1:
+    st.markdown("""
+    <div class="dashboard-header">
+        <h1>🚐 Vans Data Interactive Dashboard</h1>
+        <p>Professional analytics for delivery operations data</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-# ---------- Authentication (optional) ----------
+with col2:
+    if PASSWORD and st.session_state.get('authenticated', False):
+        if st.button("🚪 Logout", help="Logout from dashboard"):
+            st.session_state.authenticated = False
+            st.rerun()
+
+# ---------- Authentication ----------
 PASSWORD = os.getenv("STREAMLIT_DASH_PASSWORD", "")
 if PASSWORD:
     def login():
-        with st.form("login", clear_on_submit=False):
-            pwd = st.text_input("🔐 Enter Password", type="password")
-            ok = st.form_submit_button("🚀 Access Dashboard")
-        return ok, pwd
+        # Create a centered login form
+        col1, col2, col3 = st.columns([1, 2, 1])
+        with col2:
+            st.markdown("""
+            <div style="text-align: center; padding: 2rem; background: #f8f9fa; border-radius: 10px; border: 1px solid #dee2e6;">
+                <h3>🔐 Dashboard Access</h3>
+                <p style="color: #6c757d; margin-bottom: 1.5rem;">Enter the password to access the Vans Delivery Analytics Dashboard</p>
+            </div>
+            """, unsafe_allow_html=True)
+            
+            with st.form("login", clear_on_submit=False):
+                pwd = st.text_input("Password", type="password", help="Contact administrator for dashboard access")
+                ok = st.form_submit_button("🚀 Access Dashboard", use_container_width=True)
+            return ok, pwd
     
     if 'authenticated' not in st.session_state:
         st.session_state.authenticated = False
@@ -60,12 +79,13 @@ if PASSWORD:
         ok, pwd = login()
         if ok and pwd == PASSWORD:
             st.session_state.authenticated = True
+            st.success("✅ Access granted! Loading dashboard...")
             st.rerun()
         elif ok:
-            st.error("❌ Incorrect password")
+            st.error("❌ Incorrect password. Please try again.")
             st.stop()
         else:
-            st.info("🔒 Enter the password to access the dashboard.")
+            st.info("💡 **Dashboard Features:** View KPIs, analyze delivery data, compare metrics, and explore individual survey responses.")
             st.stop()
 
 # ---------- Helper Functions ----------

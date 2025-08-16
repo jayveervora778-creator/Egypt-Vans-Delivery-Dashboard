@@ -6,7 +6,7 @@ module.exports = {
     cwd: '/home/user/webapp_fresh',
     env: {
       'PYTHONPATH': '/home/user/webapp_fresh',
-      'STREAMLIT_DASH_PASSWORD': '', // Set password here if needed
+      'STREAMLIT_DASH_PASSWORD': 'vans2025', // Dashboard password
       'STREAMLIT_DISABLE_DATAFRAME_ARROW_CONVERSION': '1'
     },
     instances: 1,
