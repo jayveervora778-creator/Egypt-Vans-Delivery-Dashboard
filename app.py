@@ -297,25 +297,31 @@ if len(df_all) == 0 or len(df_all.columns) == 0:
 # Clean and prepare data
 df_all.columns = [str(c).strip() for c in df_all.columns]
 
-# Remove empty Question_1 column if it exists and has no responses
-if 'Question_1' in df_all.columns:
-    if df_all['Question_1'].isna().all() or (df_all['Question_1'].astype(str).str.strip() == '').all():
-        df_all = df_all.drop('Question_1', axis=1)
-        st.info("📝 Removed empty Question_1 column from dataset")
-
-# Also remove any other completely empty columns
-empty_cols = []
+# Remove problematic columns with minimal data
+problematic_cols = []
 for col in df_all.columns:
     try:
+        # Remove if completely empty
         if df_all[col].isna().all() or (df_all[col].astype(str).str.strip() == '').all():
-            empty_cols.append(col)
+            problematic_cols.append(col)
+        # Remove Question_1 specifically if it has very few valid responses
+        elif col == 'Question_1':
+            valid_responses = df_all[col].dropna()
+            valid_responses = valid_responses[valid_responses.astype(str).str.strip() != '']
+            if len(valid_responses) < 5:  # Less than 5 valid responses
+                problematic_cols.append(col)
+        # Remove columns with only 1-2 unique values and mostly empty
+        else:
+            non_empty = df_all[col].dropna()
+            non_empty = non_empty[non_empty.astype(str).str.strip() != '']
+            if len(non_empty) < 3 and df_all[col].nunique() <= 2:  # Very sparse data
+                problematic_cols.append(col)
     except:
         continue
 
-if empty_cols:
-    df_all = df_all.drop(empty_cols, axis=1)
-    if len(empty_cols) > 1:
-        st.info(f"📝 Removed {len(empty_cols)} empty columns: {', '.join(empty_cols[:3])}{'...' if len(empty_cols) > 3 else ''}")
+if problematic_cols:
+    df_all = df_all.drop(problematic_cols, axis=1)
+    st.info(f"📝 Removed {len(problematic_cols)} sparse/empty columns: {', '.join(problematic_cols[:3])}{'...' if len(problematic_cols) > 3 else ''}")
 
 df_view = df_all.copy()
 
@@ -480,6 +486,9 @@ analysis_tab1, analysis_tab2, analysis_tab3 = st.tabs(["📊 Custom Analysis", "
 with analysis_tab1:
     st.write("**Create custom data summaries:**")
     
+    # Add spacing for better visual separation
+    st.write("")
+    
     # Get numeric and categorical columns with comprehensive detection
     numeric_cols = []
     categorical_cols = []
@@ -636,12 +645,17 @@ with analysis_tab1:
                     # Debug info
                     st.caption(f"📊 Analysis: {len(df_analysis)} records → {len(result)} groups")
                     
+                    # Add some spacing for better alignment
+                    st.write("")
+                    
                     # Display results in improved 3-column layout
                     col1, col2, col3 = st.columns([1.2, 1.8, 1])
                     
                     with col1:
                         st.write("**📊 Results Table**")
-                        st.dataframe(result, use_container_width=True, height=300)
+                        # Add padding to align with other sections
+                        st.write("")
+                        st.dataframe(result, use_container_width=True, height=280)
                     
                     with col2:
                         if len(result) > 0:
@@ -653,6 +667,8 @@ with analysis_tab1:
                             short_group_by = group_by[:15] + "..." if len(group_by) > 15 else group_by
                             
                             st.write("**📈 Visualization**")
+                            # Add padding for alignment
+                            st.write("")
                             fig = px.bar(
                                 result,
                                 x=group_by,
@@ -687,7 +703,7 @@ with analysis_tab1:
                                 title_font_size=14,
                                 showlegend=False,
                                 margin=dict(t=60, b=80, l=60, r=20),
-                                height=350,
+                                height=320,
                                 xaxis_title_font_size=12,
                                 yaxis_title_font_size=12
                             )
@@ -710,6 +726,8 @@ with analysis_tab1:
                     
                     with col3:
                         st.write("**📋 Key Statistics**")
+                        # Add padding for alignment with other sections
+                        st.write("")
                         
                         if len(result) > 0:
                             y_col = f"{agg_function.title()} of {analyze_col}"
