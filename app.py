@@ -459,19 +459,79 @@ analysis_tab1, analysis_tab2, analysis_tab3 = st.tabs(["📊 Custom Analysis", "
 with analysis_tab1:
     st.write("**Create custom data summaries:**")
     
-    # Get numeric and categorical columns safely
+    # Get numeric and categorical columns with comprehensive detection
     numeric_cols = []
     categorical_cols = []
     
     for col in df_view.columns:
         try:
-            if pd.api.types.is_numeric_dtype(df_view[col]):
+            col_lower = col.lower()
+            non_null_count = df_view[col].count()
+            unique_count = df_view[col].nunique()
+            
+            # Enhanced numeric detection - include all numeric fields that could be useful for analysis
+            if pd.api.types.is_numeric_dtype(df_view[col]) and non_null_count > 0:
                 numeric_cols.append(col)
-            elif df_view[col].dtype == 'object':
-                categorical_cols.append(col)
+            elif df_view[col].dtype == 'object' and non_null_count > 0:
+                # Comprehensive survey field detection - include ALL relevant survey categories
+                is_important_field = any(keyword in col_lower for keyword in [
+                    # Core demographics and employment
+                    'company', 'employment', 'area', 'age', 'education', 'experience',
+                    # Benefits and compensation
+                    'insurance', 'medical', 'benefit', 'salary', 'income', 'bonus', 'allowance',
+                    'incentive', 'overtime', 'holiday', 'leave', 'vacation', 'sick',
+                    # Operations and delivery
+                    'delivery', 'deliveries', 'vehicle', 'transport', 'fuel', 'maintenance',
+                    'route', 'area', 'zone', 'district', 'region', 'location',
+                    # Costs and expenses
+                    'cost', 'expense', 'fee', 'charge', 'payment', 'fuel', 'gas', 'petrol',
+                    'repair', 'service', 'maintenance', 'insurance',
+                    # Work conditions and support
+                    'support', 'training', 'equipment', 'uniform', 'safety', 'security',
+                    'working', 'schedule', 'shift', 'hours', 'time',
+                    # Performance and satisfaction
+                    'performance', 'rating', 'satisfaction', 'feedback', 'complaint',
+                    'issue', 'problem', 'challenge', 'difficulty',
+                    # Status and classification
+                    'status', 'type', 'category', 'classification', 'level', 'grade',
+                    # Communication and technology
+                    'phone', 'mobile', 'app', 'system', 'technology', 'communication',
+                    # Personal and family
+                    'family', 'children', 'dependents', 'married', 'single',
+                    # Geographic and demographic
+                    'city', 'governorate', 'address', 'residence', 'home',
+                    # Survey responses and ratings
+                    'yes', 'no', 'agree', 'disagree', 'satisfied', 'dissatisfied',
+                    'good', 'bad', 'excellent', 'poor', 'fair'
+                ])
+                
+                # Include if it's important OR has reasonable unique count (more generous limits)
+                if is_important_field or (1 <= unique_count <= 50):
+                    categorical_cols.append(col)
         except Exception:
-            # If there's any issue accessing the column, treat it as categorical
-            categorical_cols.append(col)
+            # If there's any issue accessing the column, still try to include it
+            try:
+                if df_view[col].count() > 0:
+                    categorical_cols.append(col)
+            except:
+                continue
+    
+    # Also try to convert numeric-looking text columns
+    additional_numeric = []
+    for col in categorical_cols[:]:  # Use slice copy to avoid modifying during iteration
+        try:
+            # Try to convert to numeric
+            numeric_version = pd.to_numeric(df_view[col], errors='coerce')
+            valid_numeric_count = numeric_version.count()
+            
+            # If more than 50% of values can be converted to numeric, treat as numeric
+            if valid_numeric_count > len(df_view) * 0.5:
+                additional_numeric.append(col)
+                categorical_cols.remove(col)
+        except:
+            continue
+    
+    numeric_cols.extend(additional_numeric)
     
     if len(numeric_cols) > 0 and len(categorical_cols) > 0:
         col1, col2, col3 = st.columns(3)
@@ -530,34 +590,168 @@ with analysis_tab1:
             st.info("Need both numeric and categorical columns for analysis")
 
 with analysis_tab2:
-    preset_options = [
-        "None",
+    # Generate comprehensive preset options based on available data
+    preset_options = ["None"]
+    
+    # Core employment and demographic analysis
+    employment_presets = [
         "Employment Status × Medical Insurance",
-        "Company × Average Deliveries",
+        "Company × Employment Status", 
         "Age Groups × Employment Status",
-        "Areas Covered × Average Income",
-        "Company × Employee Count"
+        "Education Level × Employment Status",
+        "Experience × Employment Status"
     ]
     
-    selected_preset = st.selectbox("Select preset analysis:", preset_options)
+    # Financial and compensation analysis
+    financial_presets = [
+        "Company × Average Income/Salary",
+        "Employment Status × Average Income",
+        "Areas Covered × Average Income",
+        "Experience × Income Analysis",
+        "Fuel Costs by Company",
+        "Maintenance Costs by Vehicle Type",
+        "Insurance Costs Analysis"
+    ]
+    
+    # Operational and delivery analysis
+    operational_presets = [
+        "Company × Average Deliveries",
+        "Employment Status × Deliveries per Day",
+        "Areas Coverage × Delivery Performance",
+        "Vehicle Type × Delivery Efficiency",
+        "Working Hours × Delivery Count",
+        "Route Analysis by Region"
+    ]
+    
+    # Benefits and support analysis
+    benefits_presets = [
+        "Benefits Package by Company",
+        "Medical Insurance Coverage Analysis",
+        "Training Support by Employment Status",
+        "Overtime Policies × Companies",
+        "Holiday/Leave Benefits Analysis",
+        "Safety Equipment Provision"
+    ]
+    
+    # Satisfaction and performance analysis
+    satisfaction_presets = [
+        "Job Satisfaction by Company",
+        "Performance Ratings Analysis",
+        "Work-Life Balance Assessment",
+        "Support Systems Effectiveness",
+        "Communication Quality Analysis"
+    ]
+    
+    # Cost and expense analysis
+    cost_presets = [
+        "Fuel Expenses by Company",
+        "Maintenance Costs Breakdown",
+        "Operating Expenses Analysis",
+        "Cost per Delivery Analysis",
+        "Expense Categories Comparison"
+    ]
+    
+    # Combine all presets
+    all_presets = (
+        employment_presets + financial_presets + operational_presets + 
+        benefits_presets + satisfaction_presets + cost_presets
+    )
+    preset_options.extend(all_presets)
+    
+    selected_preset = st.selectbox("Select comprehensive preset analysis:", preset_options)
     
     if selected_preset != "None":
-        if selected_preset == "Employment Status × Medical Insurance":
-            if "Employment Status" in df_view.columns and "Medical Insurance" in df_view.columns:
-                crosstab = pd.crosstab(
-                    df_view["Employment Status"],
-                    df_view["Medical Insurance"],
-                    margins=True
-                )
-                st.dataframe(crosstab, use_container_width=True)
+        # Try to find matching columns for the selected preset
+        preset_executed = False
+        
+        # Employment and demographics
+        if "Employment Status × Medical Insurance" == selected_preset:
+            emp_col = next((col for col in df_view.columns if "employment" in col.lower()), None)
+            ins_col = next((col for col in df_view.columns if "insurance" in col.lower() and "medical" in col.lower()), None)
+            if emp_col and ins_col:
+                try:
+                    crosstab = pd.crosstab(df_view[emp_col], df_view[ins_col], margins=True)
+                    st.dataframe(crosstab, use_container_width=True)
+                    preset_executed = True
+                except Exception as e:
+                    st.error(f"Analysis error: {str(e)}")
+        
+        elif "Company × Average Deliveries" == selected_preset:
+            company_col = next((col for col in df_view.columns if "company" in col.lower()), None)
+            delivery_col = next((col for col in df_view.columns if "deliver" in col.lower() and pd.api.types.is_numeric_dtype(df_view[col])), None)
+            if company_col and delivery_col:
+                try:
+                    company_deliveries = df_view.groupby(company_col)[delivery_col].mean().reset_index()
+                    st.dataframe(company_deliveries, use_container_width=True)
+                    fig = px.bar(company_deliveries, x=company_col, y=delivery_col, 
+                               title=f"Average {delivery_col} by {company_col}")
+                    st.plotly_chart(fig, use_container_width=True)
+                    preset_executed = True
+                except Exception as e:
+                    st.error(f"Analysis error: {str(e)}")
+        
+        elif "Fuel Costs by Company" == selected_preset:
+            company_col = next((col for col in df_view.columns if "company" in col.lower()), None)
+            fuel_col = next((col for col in df_view.columns if "fuel" in col.lower() and pd.api.types.is_numeric_dtype(df_view[col])), None)
+            if company_col and fuel_col:
+                try:
+                    fuel_analysis = df_view.groupby(company_col)[fuel_col].agg(['mean', 'sum', 'count']).reset_index()
+                    fuel_analysis.columns = [company_col, 'Average Fuel Cost', 'Total Fuel Cost', 'Count']
+                    st.dataframe(fuel_analysis, use_container_width=True)
+                    fig = px.bar(fuel_analysis, x=company_col, y='Average Fuel Cost',
+                               title="Average Fuel Costs by Company")
+                    st.plotly_chart(fig, use_container_width=True)
+                    preset_executed = True
+                except Exception as e:
+                    st.error(f"Analysis error: {str(e)}")
+        
+        elif "Age Groups × Employment Status" == selected_preset:
+            age_col = next((col for col in df_view.columns if "age" in col.lower() and pd.api.types.is_numeric_dtype(df_view[col])), None)
+            emp_col = next((col for col in df_view.columns if "employment" in col.lower()), None)
+            if age_col and emp_col:
+                try:
+                    # Create age groups
+                    df_temp = df_view.copy()
+                    df_temp['Age Group'] = pd.cut(df_temp[age_col], bins=[0, 25, 35, 45, 55, 100], 
+                                                labels=['18-25', '26-35', '36-45', '46-55', '55+'])
+                    crosstab = pd.crosstab(df_temp['Age Group'], df_temp[emp_col], margins=True)
+                    st.dataframe(crosstab, use_container_width=True)
+                    preset_executed = True
+                except Exception as e:
+                    st.error(f"Analysis error: {str(e)}")
+        
+        # Generic fallback for other presets
+        elif not preset_executed:
+            # Try to extract analysis type from preset name
+            if "×" in selected_preset or "by" in selected_preset.lower():
+                # Extract potential column keywords from preset name
+                preset_words = selected_preset.lower().replace("×", " ").replace("by", " ").split()
+                potential_cols = []
+                for word in preset_words:
+                    matching_cols = [col for col in df_view.columns if word in col.lower() or any(keyword in col.lower() for keyword in [word])]
+                    potential_cols.extend(matching_cols)
                 
-        elif selected_preset == "Company × Average Deliveries":
-            if "Company" in df_view.columns and "Deliveries per day" in df_view.columns:
-                company_deliveries = df_view.groupby("Company")["Deliveries per day"].mean().reset_index()
-                st.dataframe(company_deliveries, use_container_width=True)
-                
-                fig = px.bar(company_deliveries, x="Company", y="Deliveries per day")
-                st.plotly_chart(fig, use_container_width=True)
+                if len(potential_cols) >= 2:
+                    # Try basic cross-tabulation or groupby analysis
+                    try:
+                        col1, col2 = potential_cols[0], potential_cols[1]
+                        if df_view[col1].dtype == 'object' and df_view[col2].dtype == 'object':
+                            # Cross-tabulation for categorical data
+                            crosstab = pd.crosstab(df_view[col1], df_view[col2], margins=True)
+                            st.dataframe(crosstab, use_container_width=True)
+                            preset_executed = True
+                        elif df_view[col1].dtype == 'object' and pd.api.types.is_numeric_dtype(df_view[col2]):
+                            # Group by analysis
+                            grouped = df_view.groupby(col1)[col2].agg(['mean', 'count']).reset_index()
+                            st.dataframe(grouped, use_container_width=True)
+                            fig = px.bar(grouped, x=col1, y='mean', title=f"Average {col2} by {col1}")
+                            st.plotly_chart(fig, use_container_width=True)
+                            preset_executed = True
+                    except Exception as e:
+                        st.error(f"Analysis error: {str(e)}")
+        
+        if not preset_executed:
+            st.info(f"📊 Preset '{selected_preset}' requires specific data columns that may not be available in your dataset. Try the Custom Analysis tab for flexible analysis options.")
 
 with analysis_tab3:
     st.write("**View individual survey responses with filtering:**")
