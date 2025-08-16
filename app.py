@@ -296,6 +296,27 @@ if len(df_all) == 0 or len(df_all.columns) == 0:
 
 # Clean and prepare data
 df_all.columns = [str(c).strip() for c in df_all.columns]
+
+# Remove empty Question_1 column if it exists and has no responses
+if 'Question_1' in df_all.columns:
+    if df_all['Question_1'].isna().all() or (df_all['Question_1'].astype(str).str.strip() == '').all():
+        df_all = df_all.drop('Question_1', axis=1)
+        st.info("📝 Removed empty Question_1 column from dataset")
+
+# Also remove any other completely empty columns
+empty_cols = []
+for col in df_all.columns:
+    try:
+        if df_all[col].isna().all() or (df_all[col].astype(str).str.strip() == '').all():
+            empty_cols.append(col)
+    except:
+        continue
+
+if empty_cols:
+    df_all = df_all.drop(empty_cols, axis=1)
+    if len(empty_cols) > 1:
+        st.info(f"📝 Removed {len(empty_cols)} empty columns: {', '.join(empty_cols[:3])}{'...' if len(empty_cols) > 3 else ''}")
+
 df_view = df_all.copy()
 
 # ---------- Sidebar Filters ----------
@@ -574,9 +595,20 @@ with analysis_tab1:
                         y=f"{agg_function.title()} of {analyze_col}",
                         title=f"{agg_function.title()} of {analyze_col} by {group_by}",
                         color=f"{agg_function.title()} of {analyze_col}",
-                        color_continuous_scale="viridis"
+                        color_continuous_scale="viridis",
+                        text=f"{agg_function.title()} of {analyze_col}"  # Add text labels
                     )
-                    fig.update_layout(xaxis_tickangle=-45)
+                    # Format text labels to show values clearly
+                    fig.update_traces(
+                        texttemplate='%{text:.2f}',  # Show 2 decimal places
+                        textposition='outside',  # Position labels outside bars
+                        textfont_size=12
+                    )
+                    fig.update_layout(
+                        xaxis_tickangle=-45,
+                        yaxis_title=f"{agg_function.title()} Value",
+                        showlegend=False  # Hide legend for cleaner look
+                    )
                     st.plotly_chart(fig, use_container_width=True)
                     
             except Exception as e:
