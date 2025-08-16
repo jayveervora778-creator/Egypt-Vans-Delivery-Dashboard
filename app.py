@@ -376,6 +376,9 @@ for col in df_view.columns:
     elif 'age' in col_lower:
         age_col = col
 
+# Debug info - show what columns were found (remove after testing)
+# st.write(f"DEBUG - Age column: {age_col}, Type: {df_view[age_col].dtype if age_col else 'None'}")
+
 # KPI 1: Survey Responses
 with kpi_col1:
     st.metric(
@@ -386,12 +389,28 @@ with kpi_col1:
 
 # KPI 2: Average Age or Insurance
 with kpi_col2:
-    if age_col and pd.api.types.is_numeric_dtype(df_view[age_col]):
-        avg_age = df_view[age_col].mean()
-        st.metric(
-            "👥 Average Age",
-            f"{avg_age:.1f} years"
-        )
+    if age_col:
+        try:
+            # More robust age calculation
+            age_series = df_view[age_col]
+            
+            # Convert to numeric if not already (handle any string ages)
+            if not pd.api.types.is_numeric_dtype(age_series):
+                age_series = pd.to_numeric(age_series, errors='coerce')
+            
+            # Calculate mean of non-null values
+            valid_ages = age_series.dropna()
+            
+            if len(valid_ages) > 0:
+                avg_age = valid_ages.mean()
+                st.metric(
+                    "👥 Average Age",
+                    f"{avg_age:.1f} years"
+                )
+            else:
+                st.metric("👥 Average Age", "No valid data")
+        except Exception as e:
+            st.metric("👥 Average Age", f"Error: {str(e)[:10]}...")
     elif insurance_col:
         yes_responses = df_view[insurance_col].astype(str).str.contains('Yes|yes', na=False).mean() * 100
         st.metric(
