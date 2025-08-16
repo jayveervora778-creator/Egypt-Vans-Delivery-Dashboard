@@ -77,168 +77,126 @@ def _flatten_columns(columns):
 
 @st.cache_data(show_spinner="Loading data...")
 def load_excel_file(path_or_bytes):
-    """Load Excel file with survey data structure support"""
+    """Load Excel file with proper survey data structure support"""
     try:
-        # Simple approach - try different loading methods
+        # Load raw data to examine structure
+        df_raw = pd.read_excel(path_or_bytes, header=None)
         
-        # Method 1: Try standard pandas Excel loading with smart headers
-        try:
-            # Load raw data to access both header rows
-            df_raw = pd.read_excel(path_or_bytes, header=None)
+        # Based on analysis: Row 0 = main headers, Row 2 = sub-headers, Row 3+ = data
+        if len(df_raw) < 4:
+            st.error("Excel file doesn't have enough rows for survey data")
+            return pd.DataFrame()
+        
+        # Get header rows (0-indexed, so Row 1 = index 0, Row 3 = index 2)
+        main_headers = df_raw.iloc[0].fillna('')  # Row 1
+        sub_headers = df_raw.iloc[2].fillna('')   # Row 3
+        
+        # Create intelligent column names
+        smart_cols = []
+        for i, (main_header, sub_header) in enumerate(zip(main_headers, sub_headers)):
+            main_header = str(main_header).strip()
+            sub_header = str(sub_header).strip()
             
-            # Get header row 1 and row 3 (sub-headers)
-            header_row1 = df_raw.iloc[1].fillna('')
-            header_row3 = df_raw.iloc[3].fillna('') if len(df_raw) > 3 else pd.Series([''] * len(df_raw.columns))
-            
-            # Create smart column names using both rows
-            smart_cols = []
-            for i, (main_header, sub_header) in enumerate(zip(header_row1, header_row3)):
-                main_header = str(main_header).strip()
-                sub_header = str(sub_header).strip()
-                
-                # If main header is empty or "Unnamed", use sub-header
-                if not main_header or main_header.startswith('Unnamed') or main_header == 'nan':
-                    if sub_header and not sub_header.startswith('Unnamed') and sub_header != 'nan':
+            # Skip completely empty columns
+            if main_header in ['nan', 'NULL', ''] and sub_header in ['nan', 'NULL', '']:
+                if i == 0:
+                    col_name = "Respondent"  # First column is always respondent
+                else:
+                    col_name = f"Empty_Col_{i}"
+            else:
+                # Create meaningful column names based on headers
+                if i == 0:
+                    col_name = "Respondent"
+                elif i == 1 and "age" in main_header.lower():
+                    col_name = "Age (Years)"
+                elif i == 2 and "area" in main_header.lower():
+                    col_name = "Areas Covered"
+                elif i == 3 and "company" in main_header.lower():
+                    col_name = "Company"
+                elif i == 4 and "employment" in main_header.lower():
+                    col_name = "Employment Status"
+                else:
+                    # Use main header as base
+                    if main_header and main_header != 'nan':
+                        col_name = main_header
+                        
+                        # Add sub-header if it provides additional context
+                        if sub_header and sub_header != 'nan' and sub_header != main_header:
+                            # Special cases for benefit details
+                            if "days per month" in sub_header.lower():
+                                col_name = f"{main_header} (Days)"
+                            elif "egp/month" in sub_header.lower() or "egp" in sub_header.lower():
+                                col_name = f"{main_header} (EGP)"
+                            elif len(sub_header) < 30:  # Only add short, meaningful sub-headers
+                                col_name = f"{main_header} ({sub_header})"
+                    elif sub_header and sub_header != 'nan':
                         col_name = sub_header
                     else:
                         col_name = f"Question_{i+1}"
-                else:
-                    # Use main header, optionally with sub-header for context
-                    col_name = main_header
-                    if sub_header and sub_header != main_header and not sub_header.startswith('Unnamed') and sub_header != 'nan':
-                        # Add sub-header for additional context if it's different and meaningful
-                        if len(col_name) > 40:
-                            col_name = col_name[:40] + "..."
-                        if len(sub_header) < 20:  # Only add short sub-headers
-                            col_name = f"{col_name} ({sub_header})"
                 
-                # Shorten very long names
-                if len(col_name) > 60:
-                    if "age" in col_name.lower():
-                        col_name = "Age (Years)"
-                    elif "company" in col_name.lower():
-                        col_name = "Company"
-                    elif "employment" in col_name.lower():
-                        col_name = "Employment Status"
-                    elif "areas" in col_name.lower():
-                        col_name = "Areas Covered"
-                    elif "deliveries" in col_name.lower():
+                # Clean and shorten long names
+                col_name = col_name.replace('\n', ' ').replace('\r', ' ')
+                if len(col_name) > 50:
+                    # Apply smart shortening
+                    if "benefit" in col_name.lower() and "direct employee" in col_name.lower():
+                        col_name = "Benefits (Direct Employee)"
+                    elif "deliveries" in col_name.lower() and "day" in col_name.lower():
                         col_name = "Deliveries per Day"
-                    elif "income" in col_name.lower():
+                    elif "income" in col_name.lower() or "salary" in col_name.lower():
                         col_name = "Net Income (EGP)"
+                    elif "vehicle" in col_name.lower() and "type" in col_name.lower():
+                        col_name = "Vehicle Type"
+                    elif "working" in col_name.lower() and "hours" in col_name.lower():
+                        col_name = "Working Hours per Day"
                     else:
-                        col_name = col_name[:57] + "..."
-                
-                smart_cols.append(col_name)
+                        col_name = col_name[:47] + "..."
             
-            # Find respondent data start
-            data_start_row = None
-            for idx in range(len(df_raw)):
-                if idx < len(df_raw) and len(df_raw.columns) > 1:
-                    cell_value = df_raw.iloc[idx, 1]
-                    if pd.notna(cell_value) and 'Respondent' in str(cell_value):
-                        data_start_row = idx
-                        break
-            
-            if data_start_row is not None:
-                # Extract data
-                data_df = df_raw.iloc[data_start_row:].copy()
-                
-                # Ensure all column names are unique
-                seen_names = set()
-                unique_cols = []
-                for col_name in smart_cols:
-                    original_name = col_name
-                    counter = 1
-                    while col_name in seen_names:
-                        col_name = f"{original_name}_{counter}"
-                        counter += 1
-                    seen_names.add(col_name)
-                    unique_cols.append(col_name)
-                
-                data_df.columns = unique_cols
-                data_df = data_df.reset_index(drop=True)
-                data_df = data_df.dropna(how='all')
-                
-                # Only convert clearly numeric columns
-                for col in data_df.columns:
-                    if "age" in col.lower() or "year" in col.lower():
-                        try:
-                            data_df[col] = pd.to_numeric(data_df[col], errors='coerce')
-                        except:
-                            pass
-                
-                return data_df
-        except Exception:
-            pass
+            smart_cols.append(col_name)
         
-        # Method 2: Load without headers and process manually
-        df_raw = pd.read_excel(path_or_bytes, header=None)
+        # Extract data starting from row 4 (index 3)
+        data_df = df_raw.iloc[3:].copy()
         
-        # Find the data start (look for "Respondent")
-        data_start_row = None
-        for idx in range(min(10, len(df_raw))):  # Only check first 10 rows
-            for col_idx in range(min(5, len(df_raw.columns))):  # Only check first 5 columns
-                cell_value = df_raw.iloc[idx, col_idx]
-                if pd.notna(cell_value) and 'Respondent' in str(cell_value):
-                    data_start_row = idx
-                    break
-            if data_start_row is not None:
-                break
+        # Ensure we have the right number of columns
+        if len(smart_cols) != len(data_df.columns):
+            # Adjust if mismatch
+            smart_cols = smart_cols[:len(data_df.columns)]
+            if len(smart_cols) < len(data_df.columns):
+                for i in range(len(smart_cols), len(data_df.columns)):
+                    smart_cols.append(f"Extra_Col_{i}")
         
-        if data_start_row is not None:
-            # Extract data
-            data_df = df_raw.iloc[data_start_row:].copy()
-            
-            # Simple column naming with uniqueness guarantee
-            simple_cols = []
-            for i in range(len(data_df.columns)):
-                if i == 0:
-                    simple_cols.append("ID")
-                elif i == 1:
-                    simple_cols.append("Respondent")
-                elif i == 2:
-                    simple_cols.append("Age (Years)")
-                elif i == 3:
-                    simple_cols.append("Areas Covered") 
-                elif i == 4:
-                    simple_cols.append("Company")
-                elif i == 5:
-                    simple_cols.append("Employment Status")
-                else:
-                    simple_cols.append(f"Question_{i}")
-            
-            # Ensure all column names are unique
-            seen_names = set()
-            unique_cols = []
-            for col_name in simple_cols:
-                original_name = col_name
-                counter = 1
-                while col_name in seen_names:
-                    col_name = f"{original_name}_{counter}"
-                    counter += 1
-                seen_names.add(col_name)
-                unique_cols.append(col_name)
-            
-            simple_cols = unique_cols
-            
-            data_df.columns = simple_cols
-            data_df = data_df.reset_index(drop=True)
-            data_df = data_df.dropna(how='all')
-            
-            # Only convert clearly numeric columns
-            if "Age (Years)" in data_df.columns:
+        # Ensure all column names are unique
+        seen_names = set()
+        unique_cols = []
+        for col_name in smart_cols:
+            original_name = col_name
+            counter = 1
+            while col_name in seen_names:
+                col_name = f"{original_name}_{counter}"
+                counter += 1
+            seen_names.add(col_name)
+            unique_cols.append(col_name)
+        
+        # Apply column names and clean up
+        data_df.columns = unique_cols
+        data_df = data_df.reset_index(drop=True)
+        data_df = data_df.dropna(how='all')
+        
+        # Convert obvious numeric columns
+        numeric_indicators = ['age', 'year', 'egp', 'days', 'hours', 'deliveries', 'income', 'salary', 'allowance']
+        for col in data_df.columns:
+            col_lower = col.lower()
+            if any(indicator in col_lower for indicator in numeric_indicators):
                 try:
-                    data_df["Age (Years)"] = pd.to_numeric(data_df["Age (Years)"], errors='coerce')
+                    # Try to convert to numeric, keeping original if it fails
+                    numeric_series = pd.to_numeric(data_df[col], errors='coerce')
+                    # Only convert if more than 50% of values are valid numbers
+                    if numeric_series.count() > len(data_df) * 0.5:
+                        data_df[col] = numeric_series
                 except:
                     pass
-            
-            return data_df
         
-        # Method 3: Fallback - return empty DataFrame with error
-        st.error("Could not process Excel file structure")
-        return pd.DataFrame()
-            
+        return data_df
+        
     except Exception as e:
         st.error(f"Error loading Excel file: {str(e)}")
         return pd.DataFrame()
@@ -246,8 +204,8 @@ def load_excel_file(path_or_bytes):
 # ---------- Data Loading ----------
 st.subheader("📊 Data Source")
 
-DEFAULT_XLSX_PATH = "Vans data for dashboard.xlsx"
-DEFAULT_CSV_PATH = "Vans data for dashboard.csv"
+DEFAULT_XLSX_PATH = "Vans_data_raw_new.xlsx"  # Use the corrected file
+FALLBACK_XLSX_PATH = "Vans data for dashboard.xlsx"  # Keep as fallback
 data_choice = st.radio(
     "Choose data source:",
     ["📁 Use included sample file", "📤 Upload your own Excel file"],
@@ -260,10 +218,22 @@ if data_choice == "📁 Use included sample file":
     if os.path.exists(DEFAULT_XLSX_PATH):
         df_all = load_excel_file(DEFAULT_XLSX_PATH)
         if not df_all.empty:
-            st.success(f"✅ Loaded Vans survey data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
+            st.success(f"✅ Loaded corrected Vans survey data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
+        else:
+            st.warning("⚠️ Issue with new file, trying fallback...")
+            if os.path.exists(FALLBACK_XLSX_PATH):
+                df_all = load_excel_file(FALLBACK_XLSX_PATH)
+                if not df_all.empty:
+                    st.info(f"✅ Loaded fallback data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
     else:
-        st.info("📁 Original data file not found. Please upload your own file below.")
-        data_choice = "📤 Upload your own Excel file"
+        # Try fallback file
+        if os.path.exists(FALLBACK_XLSX_PATH):
+            df_all = load_excel_file(FALLBACK_XLSX_PATH)
+            if not df_all.empty:
+                st.info(f"✅ Loaded fallback data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
+        else:
+            st.info("📁 Original data file not found. Please upload your own file below.")
+            data_choice = "📤 Upload your own Excel file"
 
 if data_choice == "📤 Upload your own Excel file" or df_all.empty:
     uploaded_file = st.file_uploader(
