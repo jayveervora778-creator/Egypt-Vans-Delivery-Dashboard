@@ -578,82 +578,81 @@ with analysis_tab1:
                 # Check if we have data after cleaning
                 if len(df_analysis) == 0:
                     st.warning(f"⚠️ No valid numeric data found in '{analyze_col}' column after filtering.")
-                    return
-                
-                # Perform aggregation on cleaned data
-                if agg_function == "mean":
-                    result = df_analysis.groupby(group_by)[analyze_col].mean().reset_index()
-                elif agg_function == "sum":
-                    result = df_analysis.groupby(group_by)[analyze_col].sum().reset_index()
-                elif agg_function == "count":
-                    result = df_analysis.groupby(group_by)[analyze_col].count().reset_index()
-                elif agg_function == "min":
-                    result = df_analysis.groupby(group_by)[analyze_col].min().reset_index()
-                elif agg_function == "max":
-                    result = df_analysis.groupby(group_by)[analyze_col].max().reset_index()
-                else:  # std
-                    result = df_analysis.groupby(group_by)[analyze_col].std().reset_index()
-                
-                # Ensure result has proper column names
-                result.columns = [group_by, f"{agg_function.title()} of {analyze_col}"]
-                
-                # Debug info
-                st.caption(f"📊 Analysis: {len(df_analysis)} records → {len(result)} groups")
-                
-                # Display results
-                col1, col2 = st.columns([1, 1])
-                
-                with col1:
-                    st.dataframe(result, use_container_width=True)
-                
-                with col2:
-                    if len(result) > 0:
-                        # Create the bar chart with aggregated data
-                        y_col = f"{agg_function.title()} of {analyze_col}"
-                        fig = px.bar(
-                            result,
-                            x=group_by,
-                            y=y_col,
-                            title=f"{agg_function.title()} of {analyze_col} by {group_by}",
-                            color=y_col,
-                            color_continuous_scale="viridis",
-                            text=y_col,  # Use column name for text
-                            hover_data={y_col: ':.2f'}  # Show 2 decimals on hover
-                        )
-                        
-                        # Format text labels to show values clearly
-                        if agg_function in ["mean", "std"]:
-                            # For decimal values
-                            fig.update_traces(
-                                texttemplate='%{text:.2f}',
-                                textposition='outside',
-                                textfont_size=11
+                else:
+                    # Perform aggregation on cleaned data
+                    if agg_function == "mean":
+                        result = df_analysis.groupby(group_by)[analyze_col].mean().reset_index()
+                    elif agg_function == "sum":
+                        result = df_analysis.groupby(group_by)[analyze_col].sum().reset_index()
+                    elif agg_function == "count":
+                        result = df_analysis.groupby(group_by)[analyze_col].count().reset_index()
+                    elif agg_function == "min":
+                        result = df_analysis.groupby(group_by)[analyze_col].min().reset_index()
+                    elif agg_function == "max":
+                        result = df_analysis.groupby(group_by)[analyze_col].max().reset_index()
+                    else:  # std
+                        result = df_analysis.groupby(group_by)[analyze_col].std().reset_index()
+                    
+                    # Ensure result has proper column names
+                    result.columns = [group_by, f"{agg_function.title()} of {analyze_col}"]
+                    
+                    # Debug info
+                    st.caption(f"📊 Analysis: {len(df_analysis)} records → {len(result)} groups")
+                    
+                    # Display results
+                    col1, col2 = st.columns([1, 1])
+                    
+                    with col1:
+                        st.dataframe(result, use_container_width=True)
+                    
+                    with col2:
+                        if len(result) > 0:
+                            # Create the bar chart with aggregated data
+                            y_col = f"{agg_function.title()} of {analyze_col}"
+                            fig = px.bar(
+                                result,
+                                x=group_by,
+                                y=y_col,
+                                title=f"{agg_function.title()} of {analyze_col} by {group_by}",
+                                color=y_col,
+                                color_continuous_scale="viridis",
+                                text=y_col,  # Use column name for text
+                                hover_data={y_col: ':.2f'}  # Show 2 decimals on hover
                             )
+                            
+                            # Format text labels to show values clearly
+                            if agg_function in ["mean", "std"]:
+                                # For decimal values
+                                fig.update_traces(
+                                    texttemplate='%{text:.2f}',
+                                    textposition='outside',
+                                    textfont_size=11
+                                )
+                            else:
+                                # For integers (count, sum, min, max)
+                                fig.update_traces(
+                                    texttemplate='%{text:.0f}',
+                                    textposition='outside', 
+                                    textfont_size=11
+                                )
+                            
+                            # Update layout for better appearance
+                            fig.update_layout(
+                                xaxis_tickangle=-45,
+                                yaxis_title=f"{agg_function.title()} Value",
+                                showlegend=False,
+                                margin=dict(t=50, b=50, l=50, r=50),
+                                height=400
+                            )
+                            
+                            # Adjust y-axis range to accommodate text labels
+                            max_val = result[y_col].max()
+                            if pd.notna(max_val):
+                                fig.update_yaxes(range=[0, max_val * 1.15])
+                            
+                            st.plotly_chart(fig, use_container_width=True)
                         else:
-                            # For integers (count, sum, min, max)
-                            fig.update_traces(
-                                texttemplate='%{text:.0f}',
-                                textposition='outside', 
-                                textfont_size=11
-                            )
-                        
-                        # Update layout for better appearance
-                        fig.update_layout(
-                            xaxis_tickangle=-45,
-                            yaxis_title=f"{agg_function.title()} Value",
-                            showlegend=False,
-                            margin=dict(t=50, b=50, l=50, r=50),
-                            height=400
-                        )
-                        
-                        # Adjust y-axis range to accommodate text labels
-                        max_val = result[y_col].max()
-                        if pd.notna(max_val):
-                            fig.update_yaxes(range=[0, max_val * 1.15])
-                        
-                        st.plotly_chart(fig, use_container_width=True)
-                    else:
-                        st.info("No data available for the selected combination.")
+                            st.info("No data available for the selected combination.")
                     
             except Exception as e:
                 st.error(f"Analysis error: {str(e)}")
