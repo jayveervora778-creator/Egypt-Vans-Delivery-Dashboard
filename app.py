@@ -555,14 +555,51 @@ with analysis_tab1:
     numeric_cols.extend(additional_numeric)
     
     if len(numeric_cols) > 0 and len(categorical_cols) > 0:
-        col1, col2, col3 = st.columns(3)
+        # Improved responsive layout for dropdowns
+        col1, col2, col3 = st.columns([1.2, 1.2, 0.8])
         
         with col1:
-            group_by = st.selectbox("📂 Group by:", ["None"] + categorical_cols)
+            # Truncate long column names for better display
+            display_categorical = []
+            for col in categorical_cols:
+                if len(col) > 30:
+                    display_name = col[:27] + "..."
+                else:
+                    display_name = col
+                display_categorical.append(display_name)
+            
+            selected_idx = st.selectbox(
+                "📂 Group by:",
+                range(len(categorical_cols) + 1),
+                format_func=lambda x: "None" if x == 0 else display_categorical[x-1],
+                help="Select a categorical column to group the analysis by"
+            )
+            group_by = "None" if selected_idx == 0 else categorical_cols[selected_idx-1]
+            
         with col2:
-            analyze_col = st.selectbox("📊 Analyze:", numeric_cols)
+            # Truncate long column names for better display  
+            display_numeric = []
+            for col in numeric_cols:
+                if len(col) > 30:
+                    display_name = col[:27] + "..."
+                else:
+                    display_name = col
+                display_numeric.append(display_name)
+            
+            analyze_idx = st.selectbox(
+                "📊 Analyze:",
+                range(len(numeric_cols)),
+                format_func=lambda x: display_numeric[x],
+                help="Select a numeric column to analyze"
+            )
+            analyze_col = numeric_cols[analyze_idx]
+            
         with col3:
-            agg_function = st.selectbox("🔢 Function:", ["mean", "sum", "count", "min", "max", "std"])
+            agg_function = st.selectbox(
+                "🔢 Function:", 
+                ["mean", "sum", "count", "min", "max", "std"],
+                help="Select the aggregation function to apply"
+            )
         
         if group_by != "None" and analyze_col:
             try:
@@ -599,21 +636,28 @@ with analysis_tab1:
                     # Debug info
                     st.caption(f"📊 Analysis: {len(df_analysis)} records → {len(result)} groups")
                     
-                    # Display results
-                    col1, col2 = st.columns([1, 1])
+                    # Display results in improved 3-column layout
+                    col1, col2, col3 = st.columns([1.2, 1.8, 1])
                     
                     with col1:
-                        st.dataframe(result, use_container_width=True)
+                        st.write("**📊 Results Table**")
+                        st.dataframe(result, use_container_width=True, height=300)
                     
                     with col2:
                         if len(result) > 0:
                             # Create the bar chart with aggregated data
                             y_col = f"{agg_function.title()} of {analyze_col}"
+                            
+                            # Create shorter, cleaner title to prevent cramming
+                            short_analyze_col = analyze_col[:20] + "..." if len(analyze_col) > 20 else analyze_col
+                            short_group_by = group_by[:15] + "..." if len(group_by) > 15 else group_by
+                            
+                            st.write("**📈 Visualization**")
                             fig = px.bar(
                                 result,
                                 x=group_by,
                                 y=y_col,
-                                title=f"{agg_function.title()} of {analyze_col} by {group_by}",
+                                title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by}",
                                 color=y_col,
                                 color_continuous_scale="viridis",
                                 text=y_col,  # Use column name for text
@@ -626,23 +670,33 @@ with analysis_tab1:
                                 fig.update_traces(
                                     texttemplate='%{text:.2f}',
                                     textposition='outside',
-                                    textfont_size=11
+                                    textfont_size=10
                                 )
                             else:
                                 # For integers (count, sum, min, max)
                                 fig.update_traces(
                                     texttemplate='%{text:.0f}',
                                     textposition='outside', 
-                                    textfont_size=11
+                                    textfont_size=10
                                 )
                             
-                            # Update layout for better appearance
+                            # Update layout for better appearance with text wrapping
                             fig.update_layout(
                                 xaxis_tickangle=-45,
-                                yaxis_title=f"{agg_function.title()} Value",
+                                yaxis_title=f"{agg_function.title()}",
+                                title_font_size=14,
                                 showlegend=False,
-                                margin=dict(t=50, b=50, l=50, r=50),
-                                height=400
+                                margin=dict(t=60, b=80, l=60, r=20),
+                                height=350,
+                                xaxis_title_font_size=12,
+                                yaxis_title_font_size=12
+                            )
+                            
+                            # Handle long category names to prevent cramming
+                            fig.update_xaxes(
+                                tickangle=-45,
+                                tickfont_size=10,
+                                title_standoff=25
                             )
                             
                             # Adjust y-axis range to accommodate text labels
@@ -653,6 +707,78 @@ with analysis_tab1:
                             st.plotly_chart(fig, use_container_width=True)
                         else:
                             st.info("No data available for the selected combination.")
+                    
+                    with col3:
+                        st.write("**📋 Key Statistics**")
+                        
+                        if len(result) > 0:
+                            y_col = f"{agg_function.title()} of {analyze_col}"
+                            
+                            # Calculate and display key statistics
+                            values = result[y_col].dropna()
+                            
+                            if len(values) > 0:
+                                # Overall statistics
+                                if agg_function == "mean":
+                                    overall_stat = values.mean()
+                                    stat_label = "Overall Average"
+                                elif agg_function == "sum":
+                                    overall_stat = values.sum()
+                                    stat_label = "Grand Total"
+                                elif agg_function == "count":
+                                    overall_stat = values.sum()
+                                    stat_label = "Total Count"
+                                elif agg_function == "min":
+                                    overall_stat = values.min()
+                                    stat_label = "Minimum Value"
+                                elif agg_function == "max":
+                                    overall_stat = values.max()
+                                    stat_label = "Maximum Value"
+                                else:  # std
+                                    overall_stat = values.mean()
+                                    stat_label = "Average Std Dev"
+                                
+                                # Display key metrics
+                                if agg_function in ["mean", "std"]:
+                                    st.metric(stat_label, f"{overall_stat:.2f}")
+                                else:
+                                    st.metric(stat_label, f"{overall_stat:.0f}")
+                                
+                                # Additional insights
+                                st.metric("Groups Found", len(result))
+                                
+                                if len(values) > 1:
+                                    highest_idx = values.idxmax()
+                                    lowest_idx = values.idxmin()
+                                    
+                                    highest_group = result.loc[highest_idx, group_by]
+                                    lowest_group = result.loc[lowest_idx, group_by]
+                                    
+                                    st.write("**🏆 Highest:**")
+                                    st.write(f"{str(highest_group)[:15]}...")
+                                    if agg_function in ["mean", "std"]:
+                                        st.write(f"Value: {values[highest_idx]:.2f}")
+                                    else:
+                                        st.write(f"Value: {values[highest_idx]:.0f}")
+                                    
+                                    st.write("**📉 Lowest:**")
+                                    st.write(f"{str(lowest_group)[:15]}...")
+                                    if agg_function in ["mean", "std"]:
+                                        st.write(f"Value: {values[lowest_idx]:.2f}")
+                                    else:
+                                        st.write(f"Value: {values[lowest_idx]:.0f}")
+                                
+                                # Range information
+                                if len(values) > 1:
+                                    range_val = values.max() - values.min()
+                                    if agg_function in ["mean", "std"]:
+                                        st.metric("Range", f"{range_val:.2f}")
+                                    else:
+                                        st.metric("Range", f"{range_val:.0f}")
+                            else:
+                                st.info("No statistics available")
+                        else:
+                            st.info("Select analysis options to view statistics")
                     
             except Exception as e:
                 st.error(f"Analysis error: {str(e)}")
