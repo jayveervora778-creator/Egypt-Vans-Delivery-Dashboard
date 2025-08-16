@@ -437,27 +437,54 @@ st.subheader("📈 Key Performance Indicators")
 
 kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
 
-# Find relevant columns dynamically
-deliveries_col = None
-insurance_col = None
-income_col = None
-employment_col = None
-age_col = None
+# HARDCODED KPI CALCULATIONS - Reliable and accurate
+def calculate_kpis(df):
+    """Calculate KPIs directly from known column names"""
+    kpis = {}
+    
+    # Age KPI - Use exact column name
+    age_col = "Age (Years)"
+    if age_col in df.columns:
+        valid_ages = df[age_col].dropna()
+        if len(valid_ages) > 0:
+            kpis['avg_age'] = valid_ages.mean()
+            kpis['age_count'] = len(valid_ages)
+    
+    # Deliveries KPI - Use exact column name
+    delivery_col = "Average number of deliveries per day: ______"
+    if delivery_col in df.columns:
+        valid_deliveries = df[delivery_col].dropna()
+        if len(valid_deliveries) > 0:
+            kpis['avg_deliveries'] = valid_deliveries.mean()
+            kpis['delivery_count'] = len(valid_deliveries)
+    
+    # Success Rate KPI
+    success_col = "Approximate delivery success rate (orders deliv..."
+    if success_col in df.columns:
+        valid_success = df[success_col].dropna()
+        if len(valid_success) > 0:
+            kpis['success_rate'] = valid_success.mean()
+            kpis['success_count'] = len(valid_success)
+    
+    # Income KPI - Fixed pay
+    income_col = "Please mention your Fixed Monthly Pay (if any):..."
+    if income_col in df.columns:
+        valid_income = df[income_col].dropna()
+        if len(valid_income) > 0:
+            kpis['avg_income'] = valid_income.mean()
+            kpis['income_count'] = len(valid_income)
+    
+    # Company distribution
+    company_col = "Company"
+    if company_col in df.columns:
+        companies = df[company_col].dropna().nunique()
+        kpis['unique_companies'] = companies
+        kpis['top_company'] = df[company_col].mode().iloc[0] if len(df[company_col].mode()) > 0 else "N/A"
+    
+    return kpis
 
-for col in df_view.columns:
-    col_lower = col.lower()
-    if 'deliveries' in col_lower or 'delivery' in col_lower:
-        deliveries_col = col
-    elif 'insurance' in col_lower and 'medical' in col_lower:
-        insurance_col = col
-    elif 'income' in col_lower or 'salary' in col_lower:
-        income_col = col
-    elif 'employment' in col_lower and 'status' in col_lower:
-        employment_col = col
-    elif 'age' in col_lower:
-        age_col = col
-
-# Column detection complete
+# Calculate reliable KPIs
+kpis = calculate_kpis(df_view)
 
 # KPI 1: Survey Responses
 with kpi_col1:
@@ -467,88 +494,50 @@ with kpi_col1:
         delta=f"of {len(df_all):,} total"
     )
 
-# KPI 2: Average Age or Insurance
+# KPI 2: Average Age - HARDCODED RELIABLE CALCULATION
 with kpi_col2:
-    if age_col:
-        try:
-            # Robust age calculation
-            age_series = df_view[age_col].copy()
-            
-            # More aggressive conversion to handle any data type issues
-            if not pd.api.types.is_numeric_dtype(age_series):
-                # Convert to string first, then numeric
-                age_series = age_series.astype(str)
-                age_series = age_series.replace('nan', np.nan)
-                age_series = pd.to_numeric(age_series, errors='coerce')
-            
-            # Calculate mean of non-null values
-            valid_ages = age_series.dropna()
-            
-            if len(valid_ages) > 0:
-                avg_age = valid_ages.mean()
-                st.metric(
-                    "👥 Average Age",
-                    f"{avg_age:.1f} years"
-                )
-            else:
-                st.metric("👥 Average Age", "No valid data")
-        except Exception as e:
-            st.metric("👥 Average Age", "Calculation error")
-    elif insurance_col:
-        yes_responses = df_view[insurance_col].astype(str).str.contains('Yes|yes', na=False).mean() * 100
+    if 'avg_age' in kpis:
         st.metric(
-            "🏥 Medical Insurance",
-            f"{yes_responses:.1f}% Yes"
+            "👥 Average Age",
+            f"{kpis['avg_age']:.1f} years",
+            delta=f"{kpis['age_count']} respondents"
         )
     else:
-        st.metric("📋 Data Coverage", f"{len(df_view.columns)} questions")
+        st.metric("👥 Average Age", "No data")
 
-# KPI 3: Deliveries or Income
+# KPI 3: Deliveries - HARDCODED RELIABLE CALCULATION
 with kpi_col3:
-    if deliveries_col and pd.api.types.is_numeric_dtype(df_view[deliveries_col]):
-        avg_deliveries = df_view[deliveries_col].mean()
+    if 'avg_deliveries' in kpis:
         st.metric(
             "📦 Avg Deliveries",
-            f"{avg_deliveries:.1f}/day"
+            f"{kpis['avg_deliveries']:.1f}/day",
+            delta=f"{kpis['delivery_count']} drivers"
         )
-    elif income_col and pd.api.types.is_numeric_dtype(df_view[income_col]):
-        avg_income = df_view[income_col].mean()
+    elif 'avg_income' in kpis:
         st.metric(
-            "💰 Avg Income",
-            f"{avg_income:,.0f} EGP"
+            "💰 Fixed Monthly Pay",
+            f"{kpis['avg_income']:,.0f} EGP",
+            delta=f"{kpis['income_count']} responses"
         )
     else:
-        companies = df_view.select_dtypes(include=['object']).iloc[:, 2:5]  # Look at likely company columns
-        if not companies.empty:
-            unique_companies = companies.iloc[:, 0].nunique()
-            st.metric("🏢 Companies", f"{unique_companies}")
-        else:
-            st.metric("📊 Questions", f"{len(df_view.columns)}")
+        st.metric("📊 Data Coverage", f"{len(df_view.columns)} questions")
 
-# KPI 4: Most Common Response
+# KPI 4: Success Rate & Companies - HARDCODED RELIABLE CALCULATION
 with kpi_col4:
-    if employment_col and not df_view[employment_col].empty:
-        mode_employment = df_view[employment_col].mode()[0] if len(df_view[employment_col].mode()) > 0 else "N/A"
-        count = df_view[employment_col].value_counts().iloc[0] if not df_view[employment_col].value_counts().empty else 0
+    if 'success_rate' in kpis:
         st.metric(
-            "👥 Top Employment",
-            str(mode_employment)[:20],
-            delta=f"{count} responses"
+            "🎯 Success Rate",
+            f"{kpis['success_rate']:.1f}%",
+            delta=f"{kpis['success_count']} drivers"
+        )
+    elif 'unique_companies' in kpis:
+        st.metric(
+            "🏢 Companies",
+            f"{kpis['unique_companies']}",
+            delta=f"Top: {kpis['top_company']}"
         )
     else:
-        # Find any categorical column with reasonable distribution
-        for col in df_view.select_dtypes(include=['object']).columns:
-            if df_view[col].nunique() < 10 and df_view[col].nunique() > 1:
-                mode_val = df_view[col].mode()[0] if len(df_view[col].mode()) > 0 else "N/A"
-                count = df_view[col].value_counts().iloc[0] if not df_view[col].value_counts().empty else 0
-                st.metric(
-                    f"📈 Most Common",
-                    str(mode_val)[:15],
-                    delta=f"{count} responses"
-                )
-                break
-        else:
-            st.metric("✅ Data Quality", f"{df_view.notna().sum().sum():,} answers")
+        st.metric("✅ Data Quality", f"{df_view.notna().sum().sum():,} answers")
 
 # ---------- Interactive Data Analysis ----------
 st.subheader("🔍 Interactive Data Analysis")
