@@ -81,40 +81,73 @@ def load_excel_file(path_or_bytes):
     try:
         # Simple approach - try different loading methods
         
-        # Method 1: Try standard pandas Excel loading with headers
+        # Method 1: Try standard pandas Excel loading with smart headers
         try:
-            df = pd.read_excel(path_or_bytes, header=1)
-            # Look for respondent data
-            respondent_rows = df[df.iloc[:, 1].astype(str).str.contains('Respondent', na=False)]
-            if len(respondent_rows) > 0:
-                # Get the index of first respondent
-                start_idx = respondent_rows.index[0]
-                # Extract data from that point
-                data_df = df.iloc[start_idx:].copy()
-                # Clean column names
-                new_cols = []
-                for col in data_df.columns:
-                    if pd.notna(col) and not str(col).startswith('Unnamed'):
-                        clean_name = str(col).strip()
-                        if len(clean_name) > 40:
-                            if "age" in clean_name.lower():
-                                clean_name = "Age (Years)"
-                            elif "company" in clean_name.lower():
-                                clean_name = "Company"
-                            elif "employment" in clean_name.lower():
-                                clean_name = "Employment Status"
-                            elif "areas" in clean_name.lower():
-                                clean_name = "Areas Covered"
-                            else:
-                                clean_name = clean_name[:40] + "..."
-                        new_cols.append(clean_name)
+            # Load raw data to access both header rows
+            df_raw = pd.read_excel(path_or_bytes, header=None)
+            
+            # Get header row 1 and row 3 (sub-headers)
+            header_row1 = df_raw.iloc[1].fillna('')
+            header_row3 = df_raw.iloc[3].fillna('') if len(df_raw) > 3 else pd.Series([''] * len(df_raw.columns))
+            
+            # Create smart column names using both rows
+            smart_cols = []
+            for i, (main_header, sub_header) in enumerate(zip(header_row1, header_row3)):
+                main_header = str(main_header).strip()
+                sub_header = str(sub_header).strip()
+                
+                # If main header is empty or "Unnamed", use sub-header
+                if not main_header or main_header.startswith('Unnamed') or main_header == 'nan':
+                    if sub_header and not sub_header.startswith('Unnamed') and sub_header != 'nan':
+                        col_name = sub_header
                     else:
-                        new_cols.append(f"Column_{len(new_cols)}")
+                        col_name = f"Question_{i+1}"
+                else:
+                    # Use main header, optionally with sub-header for context
+                    col_name = main_header
+                    if sub_header and sub_header != main_header and not sub_header.startswith('Unnamed') and sub_header != 'nan':
+                        # Add sub-header for additional context if it's different and meaningful
+                        if len(col_name) > 40:
+                            col_name = col_name[:40] + "..."
+                        if len(sub_header) < 20:  # Only add short sub-headers
+                            col_name = f"{col_name} ({sub_header})"
+                
+                # Shorten very long names
+                if len(col_name) > 60:
+                    if "age" in col_name.lower():
+                        col_name = "Age (Years)"
+                    elif "company" in col_name.lower():
+                        col_name = "Company"
+                    elif "employment" in col_name.lower():
+                        col_name = "Employment Status"
+                    elif "areas" in col_name.lower():
+                        col_name = "Areas Covered"
+                    elif "deliveries" in col_name.lower():
+                        col_name = "Deliveries per Day"
+                    elif "income" in col_name.lower():
+                        col_name = "Net Income (EGP)"
+                    else:
+                        col_name = col_name[:57] + "..."
+                
+                smart_cols.append(col_name)
+            
+            # Find respondent data start
+            data_start_row = None
+            for idx in range(len(df_raw)):
+                if idx < len(df_raw) and len(df_raw.columns) > 1:
+                    cell_value = df_raw.iloc[idx, 1]
+                    if pd.notna(cell_value) and 'Respondent' in str(cell_value):
+                        data_start_row = idx
+                        break
+            
+            if data_start_row is not None:
+                # Extract data
+                data_df = df_raw.iloc[data_start_row:].copy()
                 
                 # Ensure all column names are unique
                 seen_names = set()
                 unique_cols = []
-                for col_name in new_cols:
+                for col_name in smart_cols:
                     original_name = col_name
                     counter = 1
                     while col_name in seen_names:
@@ -126,6 +159,14 @@ def load_excel_file(path_or_bytes):
                 data_df.columns = unique_cols
                 data_df = data_df.reset_index(drop=True)
                 data_df = data_df.dropna(how='all')
+                
+                # Only convert clearly numeric columns
+                for col in data_df.columns:
+                    if "age" in col.lower() or "year" in col.lower():
+                        try:
+                            data_df[col] = pd.to_numeric(data_df[col], errors='coerce')
+                        except:
+                            pass
                 
                 return data_df
         except Exception:
@@ -413,7 +454,7 @@ with kpi_col4:
 # ---------- Interactive Data Analysis ----------
 st.subheader("🔍 Interactive Data Analysis")
 
-analysis_tab1, analysis_tab2 = st.tabs(["📊 Custom Analysis", "🔖 Quick Presets"])
+analysis_tab1, analysis_tab2, analysis_tab3 = st.tabs(["📊 Custom Analysis", "🔖 Quick Presets", "📋 Individual Responses"])
 
 with analysis_tab1:
     st.write("**Create custom data summaries:**")
@@ -517,6 +558,139 @@ with analysis_tab2:
                 
                 fig = px.bar(company_deliveries, x="Company", y="Deliveries per day")
                 st.plotly_chart(fig, use_container_width=True)
+
+with analysis_tab3:
+    st.write("**View individual survey responses with filtering:**")
+    
+    # Add response-level filters
+    col1, col2, col3 = st.columns(3)
+    
+    # Get filterable columns (categorical with reasonable number of unique values)
+    filterable_cols = []
+    for col in df_view.columns:
+        try:
+            if df_view[col].dtype == 'object' and 2 <= df_view[col].nunique() <= 20:
+                filterable_cols.append(col)
+        except:
+            continue
+    
+    active_filters = {}
+    
+    if len(filterable_cols) > 0:
+        with col1:
+            if len(filterable_cols) > 0:
+                filter_col1 = st.selectbox("Filter by:", ["None"] + filterable_cols, key="response_filter1")
+                if filter_col1 != "None":
+                    unique_vals1 = sorted(df_view[filter_col1].dropna().unique())
+                    selected_vals1 = st.multiselect(f"Select {filter_col1}:", unique_vals1, default=unique_vals1, key="values1")
+                    if selected_vals1:
+                        active_filters[filter_col1] = selected_vals1
+        
+        with col2:
+            if len(filterable_cols) > 1:
+                remaining_cols = [col for col in filterable_cols if col != filter_col1]
+                filter_col2 = st.selectbox("Also filter by:", ["None"] + remaining_cols, key="response_filter2")
+                if filter_col2 != "None":
+                    unique_vals2 = sorted(df_view[filter_col2].dropna().unique())
+                    selected_vals2 = st.multiselect(f"Select {filter_col2}:", unique_vals2, default=unique_vals2, key="values2")
+                    if selected_vals2:
+                        active_filters[filter_col2] = selected_vals2
+        
+        with col3:
+            if len(filterable_cols) > 2:
+                remaining_cols = [col for col in filterable_cols if col not in [filter_col1, filter_col2]]
+                filter_col3 = st.selectbox("Additional filter:", ["None"] + remaining_cols, key="response_filter3")
+                if filter_col3 != "None":
+                    unique_vals3 = sorted(df_view[filter_col3].dropna().unique())
+                    selected_vals3 = st.multiselect(f"Select {filter_col3}:", unique_vals3, default=unique_vals3, key="values3")
+                    if selected_vals3:
+                        active_filters[filter_col3] = selected_vals3
+    
+    # Apply filters to get filtered responses
+    filtered_responses = df_view.copy()
+    for filter_col, filter_vals in active_filters.items():
+        filtered_responses = filtered_responses[filtered_responses[filter_col].isin(filter_vals)]
+    
+    # Display filtering summary
+    st.write(f"**Showing {len(filtered_responses)} of {len(df_view)} survey responses**")
+    
+    if len(active_filters) > 0:
+        filter_summary = ", ".join([f"{col}: {len(vals)} selected" for col, vals in active_filters.items()])
+        st.caption(f"Active filters: {filter_summary}")
+    
+    # Column selection for display
+    st.write("**Select columns to display:**")
+    
+    # Smart default column selection
+    default_cols = []
+    for col in filtered_responses.columns:
+        col_lower = col.lower()
+        if any(keyword in col_lower for keyword in ['respondent', 'age', 'company', 'employment', 'area', 'income', 'deliveries']):
+            default_cols.append(col)
+    
+    # Limit to first 8 columns to avoid overwhelming display
+    default_cols = default_cols[:8]
+    
+    selected_columns = st.multiselect(
+        "Choose columns to show in responses:",
+        options=filtered_responses.columns.tolist(),
+        default=default_cols if default_cols else filtered_responses.columns.tolist()[:6],
+        key="response_columns"
+    )
+    
+    if selected_columns:
+        # Display options
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            page_size = st.selectbox("Responses per page:", [10, 25, 50, 100], index=1)
+        with col2:
+            show_index = st.checkbox("Show row numbers", value=True)
+        with col3:
+            sort_column = st.selectbox("Sort by:", ["None"] + selected_columns)
+        
+        # Prepare display dataframe
+        display_df = filtered_responses[selected_columns].copy()
+        
+        # Apply sorting
+        if sort_column != "None":
+            try:
+                display_df = display_df.sort_values(sort_column)
+            except:
+                pass
+        
+        # Pagination
+        total_responses = len(display_df)
+        total_pages = (total_responses - 1) // page_size + 1 if total_responses > 0 else 0
+        
+        if total_pages > 1:
+            col1, col2, col3 = st.columns([1, 2, 1])
+            with col2:
+                page = st.selectbox(f"Page (1 to {total_pages}):", range(1, total_pages + 1))
+            
+            start_idx = (page - 1) * page_size
+            end_idx = start_idx + page_size
+            display_df = display_df.iloc[start_idx:end_idx]
+        
+        # Display the responses
+        if len(display_df) > 0:
+            st.dataframe(
+                display_df,
+                use_container_width=True,
+                hide_index=not show_index
+            )
+            
+            # Download option for filtered responses
+            csv = filtered_responses.to_csv(index=False)
+            st.download_button(
+                label=f"📥 Download Filtered Responses ({len(filtered_responses)} records)",
+                data=csv,
+                file_name=f"survey_responses_filtered_{datetime.datetime.now().strftime('%Y%m%d_%H%M')}.csv",
+                mime="text/csv"
+            )
+        else:
+            st.info("No responses match the current filters.")
+    else:
+        st.info("Please select at least one column to display.")
 
 # ---------- Visualizations ----------
 st.subheader("📊 Data Visualizations")
