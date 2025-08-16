@@ -222,6 +222,11 @@ if df_all.empty:
     st.error("❌ No data available. Please upload a valid Excel file.")
     st.stop()
 
+# Ensure we have valid data
+if len(df_all) == 0 or len(df_all.columns) == 0:
+    st.error("❌ Invalid data structure. Please check your Excel file.")
+    st.stop()
+
 # Clean and prepare data
 df_all.columns = [str(c).strip() for c in df_all.columns]
 df_view = df_all.copy()
@@ -238,8 +243,12 @@ with st.sidebar:
     for col in df_all.columns:
         col_lower = col.lower()
         if any(keyword in col_lower for keyword in ['company', 'employment', 'area', 'insurance', 'status']):
-            if df_all[col].dtype == 'object' and df_all[col].nunique() < 20:  # Only categorical with reasonable unique values
-                potential_filter_cols.append(col)
+            try:
+                if df_all[col].dtype == 'object' and df_all[col].nunique() < 20:  # Only categorical with reasonable unique values
+                    potential_filter_cols.append(col)
+            except Exception:
+                # If there's an issue accessing the column, skip it
+                continue
     
     filter_columns = potential_filter_cols[:4]  # Limit to first 4 relevant columns
     
@@ -383,11 +392,21 @@ analysis_tab1, analysis_tab2 = st.tabs(["📊 Custom Analysis", "🔖 Quick Pres
 with analysis_tab1:
     st.write("**Create custom data summaries:**")
     
-    # Get numeric and categorical columns
-    numeric_cols = [col for col in df_view.columns if pd.api.types.is_numeric_dtype(df_view[col])]
-    categorical_cols = [col for col in df_view.columns if df_view[col].dtype == 'object']
+    # Get numeric and categorical columns safely
+    numeric_cols = []
+    categorical_cols = []
     
-    if numeric_cols and categorical_cols:
+    for col in df_view.columns:
+        try:
+            if pd.api.types.is_numeric_dtype(df_view[col]):
+                numeric_cols.append(col)
+            elif df_view[col].dtype == 'object':
+                categorical_cols.append(col)
+        except Exception:
+            # If there's any issue accessing the column, treat it as categorical
+            categorical_cols.append(col)
+    
+    if len(numeric_cols) > 0 and len(categorical_cols) > 0:
         col1, col2, col3 = st.columns(3)
         
         with col1:
@@ -436,7 +455,12 @@ with analysis_tab1:
             except Exception as e:
                 st.error(f"Analysis error: {str(e)}")
     else:
-        st.info("Need both numeric and categorical columns for analysis")
+        if len(numeric_cols) == 0:
+            st.info("📊 No numeric columns found for analysis. Upload data with numeric values (age, income, etc.)")
+        elif len(categorical_cols) == 0:
+            st.info("📂 No categorical columns found for grouping. Upload data with text categories (company, status, etc.)")
+        else:
+            st.info("Need both numeric and categorical columns for analysis")
 
 with analysis_tab2:
     preset_options = [
@@ -578,13 +602,23 @@ with st.expander("🔍 View Raw Data", expanded=False):
     st.dataframe(df_view, use_container_width=True)
     
     # Column information
-    col_info = pd.DataFrame({
-        'Column Name': df_view.columns,
-        'Data Type': df_view.dtypes.astype(str),
-        'Non-Null Count': df_view.count(),
-        'Null Count': df_view.isnull().sum(),
-        'Unique Values': df_view.nunique()
-    })
+    try:
+        col_info = pd.DataFrame({
+            'Column Name': df_view.columns,
+            'Data Type': df_view.dtypes.astype(str),
+            'Non-Null Count': df_view.count(),
+            'Null Count': df_view.isnull().sum(),
+            'Unique Values': df_view.nunique()
+        })
+    except Exception:
+        # Fallback column info if dtypes fails
+        col_info = pd.DataFrame({
+            'Column Name': df_view.columns,
+            'Data Type': ['Mixed' for _ in df_view.columns],
+            'Non-Null Count': [len(df_view) for _ in df_view.columns],
+            'Null Count': [0 for _ in df_view.columns],
+            'Unique Values': [len(df_view) for _ in df_view.columns]
+        })
     
     st.write("**Column Information:**")
     st.dataframe(col_info, use_container_width=True)
