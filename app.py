@@ -37,6 +37,9 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # Header
+# ---------- Authentication ----------
+PASSWORD = os.getenv("STREAMLIT_DASH_PASSWORD", "")
+
 # Dashboard header with logout option
 col1, col2 = st.columns([4, 1])
 with col1:
@@ -52,9 +55,6 @@ with col2:
         if st.button("🚪 Logout", help="Logout from dashboard"):
             st.session_state.authenticated = False
             st.rerun()
-
-# ---------- Authentication ----------
-PASSWORD = os.getenv("STREAMLIT_DASH_PASSWORD", "")
 if PASSWORD:
     def login():
         # Create a centered login form
