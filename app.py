@@ -111,7 +111,19 @@ def load_excel_file(path_or_bytes):
                     else:
                         new_cols.append(f"Column_{len(new_cols)}")
                 
-                data_df.columns = new_cols
+                # Ensure all column names are unique
+                seen_names = set()
+                unique_cols = []
+                for col_name in new_cols:
+                    original_name = col_name
+                    counter = 1
+                    while col_name in seen_names:
+                        col_name = f"{original_name}_{counter}"
+                        counter += 1
+                    seen_names.add(col_name)
+                    unique_cols.append(col_name)
+                
+                data_df.columns = unique_cols
                 data_df = data_df.reset_index(drop=True)
                 data_df = data_df.dropna(how='all')
                 
@@ -137,7 +149,7 @@ def load_excel_file(path_or_bytes):
             # Extract data
             data_df = df_raw.iloc[data_start_row:].copy()
             
-            # Simple column naming
+            # Simple column naming with uniqueness guarantee
             simple_cols = []
             for i in range(len(data_df.columns)):
                 if i == 0:
@@ -153,7 +165,21 @@ def load_excel_file(path_or_bytes):
                 elif i == 5:
                     simple_cols.append("Employment Status")
                 else:
-                    simple_cols.append(f"Question_{i-1}")
+                    simple_cols.append(f"Question_{i}")
+            
+            # Ensure all column names are unique
+            seen_names = set()
+            unique_cols = []
+            for col_name in simple_cols:
+                original_name = col_name
+                counter = 1
+                while col_name in seen_names:
+                    col_name = f"{original_name}_{counter}"
+                    counter += 1
+                seen_names.add(col_name)
+                unique_cols.append(col_name)
+            
+            simple_cols = unique_cols
             
             data_df.columns = simple_cols
             data_df = data_df.reset_index(drop=True)
@@ -502,54 +528,103 @@ with viz_tab1:
     
     with col1:
         # Employment Status Distribution
-        if "Employment Status" in df_view.columns:
-            fig = px.pie(
-                df_view,
-                names="Employment Status",
-                title="Employment Status Distribution",
-                color_discrete_sequence=px.colors.qualitative.Set3
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        employment_col = None
+        for col in df_view.columns:
+            if "employment" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
+                employment_col = col
+                break
+        
+        if employment_col and len(df_view[employment_col].dropna()) > 0:
+            try:
+                fig = px.pie(
+                    df_view,
+                    names=employment_col,
+                    title="Employment Status Distribution",
+                    color_discrete_sequence=px.colors.qualitative.Set3
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error creating employment chart: {str(e)}")
+        else:
+            st.info("No valid employment status data found for visualization")
     
     with col2:
         # Age Distribution
-        if "Age (Years)" in df_view.columns:
-            fig = px.histogram(
-                df_view,
-                x="Age (Years)",
-                nbins=15,
-                title="Age Distribution",
-                color_discrete_sequence=["#667eea"]
-            )
-            st.plotly_chart(fig, use_container_width=True)
+        age_col = None
+        for col in df_view.columns:
+            if "age" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
+                age_col = col
+                break
+        
+        if age_col and pd.api.types.is_numeric_dtype(df_view[age_col]):
+            try:
+                fig = px.histogram(
+                    df_view,
+                    x=age_col,
+                    nbins=15,
+                    title="Age Distribution",
+                    color_discrete_sequence=["#667eea"]
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error creating age chart: {str(e)}")
+        else:
+            st.info("No valid age data found for visualization")
 
 with viz_tab2:
     col1, col2 = st.columns(2)
     
     with col1:
         # Deliveries by Company
-        if "Company" in df_view.columns and "Deliveries per day" in df_view.columns:
-            fig = px.box(
-                df_view,
-                x="Company",
-                y="Deliveries per day",
-                title="Deliveries per Day by Company"
-            )
-            fig.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
+        company_col = None
+        deliveries_col = None
+        
+        for col in df_view.columns:
+            if "company" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
+                company_col = col
+            elif "deliveries" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
+                deliveries_col = col
+        
+        if company_col and deliveries_col and len(df_view[company_col].dropna()) > 0:
+            try:
+                fig = px.box(
+                    df_view,
+                    x=company_col,
+                    y=deliveries_col,
+                    title="Deliveries per Day by Company"
+                )
+                fig.update_layout(xaxis_tickangle=-45)
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error creating company/deliveries chart: {str(e)}")
+        else:
+            st.info("No valid company or deliveries data found for visualization")
     
     with col2:
         # Income by Employment Status
-        income_col = "Net Income (Gross - All Expenses) (EGP)"
-        if income_col in df_view.columns and "Employment Status" in df_view.columns:
-            fig = px.violin(
-                df_view,
-                x="Employment Status",
-                y=income_col,
-                title="Income Distribution by Employment Status"
-            )
-            fig.update_layout(xaxis_tickangle=-45)
-            st.plotly_chart(fig, use_container_width=True)
+        income_col = None
+        employment_col = None
+        
+        for col in df_view.columns:
+            if "income" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
+                income_col = col
+            elif "employment" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
+                employment_col = col
+        
+        if income_col and employment_col and len(df_view[income_col].dropna()) > 0:
+            try:
+                fig = px.violin(
+                    df_view,
+                    x=employment_col,
+                    y=income_col,
+                    title="Income Distribution by Employment Status"
+                )
+                fig.update_layout(xaxis_tickangle=-45)
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as e:
+                st.error(f"Error creating income chart: {str(e)}")
+        else:
+            st.info("No valid income or employment data found for visualization")
 
 with viz_tab3:
     # Correlation heatmap
