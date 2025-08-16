@@ -77,36 +77,72 @@ def _flatten_columns(columns):
 
 @st.cache_data(show_spinner="Loading data...")
 def load_excel_file(path_or_bytes):
-    """Load Excel file with multi-sheet and multi-header support"""
+    """Load Excel file with survey data structure support"""
     try:
-        xls = pd.ExcelFile(path_or_bytes)
-        frames = []
+        # Load with header row 1 (where questions are)
+        df = pd.read_excel(path_or_bytes, header=1)
         
-        for sheet in xls.sheet_names:
-            try:
-                # Try multi-level headers first
-                df = pd.read_excel(path_or_bytes, sheet_name=sheet, header=[0,1,2])
-                df.columns = _flatten_columns(df.columns.values)
-            except Exception:
-                try:
-                    # Try single header
-                    df = pd.read_excel(path_or_bytes, sheet_name=sheet, header=0)
-                    df.columns = _flatten_columns(df.columns.values)
-                except Exception:
-                    # Skip problematic sheets
-                    continue
-            
-            # Clean column names
-            df.columns = [c.replace("Unnamed: ", "").strip() for c in df.columns]
-            df.columns = [c if c else f"Column_{i}" for i, c in enumerate(df.columns)]
-            
-            frames.append(df)
+        # Clean up column names
+        clean_columns = []
+        for col in df.columns:
+            if pd.notna(col) and not str(col).startswith('Unnamed'):
+                clean_name = str(col).strip()
+                # Shorten very long question names for better display
+                if len(clean_name) > 50:
+                    # Extract key parts from survey questions
+                    if "age" in clean_name.lower():
+                        clean_name = "Age (Years)"
+                    elif "areas" in clean_name.lower() and "cover" in clean_name.lower():
+                        clean_name = "Areas Covered"
+                    elif "company" in clean_name.lower():
+                        clean_name = "Company"
+                    elif "employment status" in clean_name.lower():
+                        clean_name = "Employment Status"
+                    elif "benefits" in clean_name.lower():
+                        clean_name = "Benefits"
+                    elif "deliveries" in clean_name.lower() and "day" in clean_name.lower():
+                        clean_name = "Deliveries per day"
+                    elif "income" in clean_name.lower() or "salary" in clean_name.lower():
+                        clean_name = "Net Income (EGP)"
+                    elif "medical" in clean_name.lower() and "insurance" in clean_name.lower():
+                        clean_name = "Medical Insurance"
+                    elif "fuel" in clean_name.lower():
+                        clean_name = "Fuel Expenses (EGP)"
+                    elif "maintenance" in clean_name.lower():
+                        clean_name = "Maintenance Costs (EGP)"
+                    else:
+                        # Keep first 50 characters
+                        clean_name = clean_name[:50] + "..."
+                clean_columns.append(clean_name)
+            else:
+                clean_columns.append(f"Column_{len(clean_columns)}")
         
-        if frames:
-            result = pd.concat(frames, ignore_index=True)
-            return result
+        df.columns = clean_columns
+        
+        # Find data start row (skip header rows, look for "Respondent")
+        data_start_row = None
+        for idx, row in df.iterrows():
+            if pd.notna(row.iloc[1]) and 'Respondent' in str(row.iloc[1]):
+                data_start_row = idx
+                break
+        
+        if data_start_row is not None:
+            # Get actual data rows
+            data_df = df.iloc[data_start_row:].copy()
+            
+            # Remove completely empty rows
+            data_df = data_df.dropna(how='all')
+            
+            # Clean numeric columns
+            numeric_patterns = ['age', 'deliveries', 'income', 'salary', 'expense', 'cost']
+            for col in data_df.columns:
+                col_lower = col.lower()
+                if any(pattern in col_lower for pattern in numeric_patterns):
+                    data_df[col] = pd.to_numeric(data_df[col], errors='coerce')
+            
+            return data_df
         else:
-            st.error("No valid data found in Excel file")
+            st.error("Could not find survey response data in Excel file")
             return pd.DataFrame()
             
     except Exception as e:
@@ -130,13 +166,9 @@ if data_choice == "📁 Use included sample file":
     if os.path.exists(DEFAULT_XLSX_PATH):
         df_all = load_excel_file(DEFAULT_XLSX_PATH)
         if not df_all.empty:
-            st.success(f"✅ Loaded sample data: {len(df_all):,} records")
-    elif os.path.exists(DEFAULT_CSV_PATH):
-        df_all = pd.read_csv(DEFAULT_CSV_PATH)
-        if not df_all.empty:
-            st.success(f"✅ Loaded sample data: {len(df_all):,} records")
+            st.success(f"✅ Loaded Vans survey data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
     else:
-        st.info("📁 Sample file not found. Please upload your own file below.")
+        st.info("📁 Original data file not found. Please upload your own file below.")
         data_choice = "📤 Upload your own Excel file"
 
 if data_choice == "📤 Upload your own Excel file" or df_all.empty:
@@ -174,8 +206,15 @@ with st.sidebar:
     # Show data info
     st.info(f"**Total Records:** {len(df_all):,}")
     
-    # Categorical filters
-    filter_columns = ["Company", "Employment Status", "Areas Covered", "Medical Insurance"]
+    # Categorical filters - find relevant columns dynamically
+    potential_filter_cols = []
+    for col in df_all.columns:
+        col_lower = col.lower()
+        if any(keyword in col_lower for keyword in ['company', 'employment', 'area', 'insurance', 'status']):
+            if df_all[col].dtype == 'object' and df_all[col].nunique() < 20:  # Only categorical with reasonable unique values
+                potential_filter_cols.append(col)
+    
+    filter_columns = potential_filter_cols[:4]  # Limit to first 4 relevant columns
     
     for col in filter_columns:
         if col in df_all.columns:
@@ -217,57 +256,97 @@ st.subheader("📈 Key Performance Indicators")
 
 kpi_col1, kpi_col2, kpi_col3, kpi_col4 = st.columns(4)
 
-# KPI 1: Average Deliveries
-with kpi_col1:
-    if "Deliveries per day" in df_view.columns:
-        avg_deliveries = df_view["Deliveries per day"].mean()
-        st.metric(
-            "📦 Avg Deliveries/Day",
-            f"{avg_deliveries:.1f}",
-            delta=f"vs {df_all['Deliveries per day'].mean():.1f} overall"
-        )
-    else:
-        st.metric("📦 Avg Deliveries/Day", "N/A")
+# Find relevant columns dynamically
+deliveries_col = None
+insurance_col = None
+income_col = None
+employment_col = None
+age_col = None
 
-# KPI 2: Medical Insurance Coverage
+for col in df_view.columns:
+    col_lower = col.lower()
+    if 'deliveries' in col_lower or 'delivery' in col_lower:
+        deliveries_col = col
+    elif 'insurance' in col_lower and 'medical' in col_lower:
+        insurance_col = col
+    elif 'income' in col_lower or 'salary' in col_lower:
+        income_col = col
+    elif 'employment' in col_lower and 'status' in col_lower:
+        employment_col = col
+    elif 'age' in col_lower:
+        age_col = col
+
+# KPI 1: Survey Responses
+with kpi_col1:
+    st.metric(
+        "📊 Total Responses",
+        f"{len(df_view):,}",
+        delta=f"of {len(df_all):,} total"
+    )
+
+# KPI 2: Average Age or Insurance
 with kpi_col2:
-    if "Medical Insurance" in df_view.columns:
-        insurance_pct = (df_view["Medical Insurance"].eq("Yes").mean() * 100)
-        overall_pct = (df_all["Medical Insurance"].eq("Yes").mean() * 100)
+    if age_col and pd.api.types.is_numeric_dtype(df_view[age_col]):
+        avg_age = df_view[age_col].mean()
+        st.metric(
+            "👥 Average Age",
+            f"{avg_age:.1f} years"
+        )
+    elif insurance_col:
+        yes_responses = df_view[insurance_col].astype(str).str.contains('Yes|yes', na=False).mean() * 100
         st.metric(
             "🏥 Medical Insurance",
-            f"{insurance_pct:.1f}%",
-            delta=f"{insurance_pct - overall_pct:.1f}pp"
+            f"{yes_responses:.1f}% Yes"
         )
     else:
-        st.metric("🏥 Medical Insurance", "N/A")
+        st.metric("📋 Data Coverage", f"{len(df_view.columns)} questions")
 
-# KPI 3: Average Net Income
+# KPI 3: Deliveries or Income
 with kpi_col3:
-    income_col = "Net Income (Gross - All Expenses) (EGP)"
-    if income_col in df_view.columns:
-        avg_income = df_view[income_col].mean()
-        overall_income = df_all[income_col].mean()
+    if deliveries_col and pd.api.types.is_numeric_dtype(df_view[deliveries_col]):
+        avg_deliveries = df_view[deliveries_col].mean()
         st.metric(
-            "💰 Avg Net Income",
-            f"{avg_income:,.0f} EGP",
-            delta=f"{avg_income - overall_income:,.0f} EGP"
+            "📦 Avg Deliveries",
+            f"{avg_deliveries:.1f}/day"
+        )
+    elif income_col and pd.api.types.is_numeric_dtype(df_view[income_col]):
+        avg_income = df_view[income_col].mean()
+        st.metric(
+            "💰 Avg Income",
+            f"{avg_income:,.0f} EGP"
         )
     else:
-        st.metric("💰 Avg Net Income", "N/A")
+        companies = df_view.select_dtypes(include=['object']).iloc[:, 2:5]  # Look at likely company columns
+        if not companies.empty:
+            unique_companies = companies.iloc[:, 0].nunique()
+            st.metric("🏢 Companies", f"{unique_companies}")
+        else:
+            st.metric("📊 Questions", f"{len(df_view.columns)}")
 
-# KPI 4: Most Common Employment
+# KPI 4: Most Common Response
 with kpi_col4:
-    if "Employment Status" in df_view.columns and not df_view["Employment Status"].empty:
-        mode_employment = df_view["Employment Status"].mode()[0]
-        count = df_view["Employment Status"].value_counts().iloc[0]
+    if employment_col and not df_view[employment_col].empty:
+        mode_employment = df_view[employment_col].mode()[0] if len(df_view[employment_col].mode()) > 0 else "N/A"
+        count = df_view[employment_col].value_counts().iloc[0] if not df_view[employment_col].value_counts().empty else 0
         st.metric(
             "👥 Top Employment",
-            mode_employment,
-            delta=f"{count} workers"
+            str(mode_employment)[:20],
+            delta=f"{count} responses"
         )
     else:
-        st.metric("👥 Top Employment", "N/A")
+        # Find any categorical column with reasonable distribution
+        for col in df_view.select_dtypes(include=['object']).columns:
+            if df_view[col].nunique() < 10 and df_view[col].nunique() > 1:
+                mode_val = df_view[col].mode()[0] if len(df_view[col].mode()) > 0 else "N/A"
+                count = df_view[col].value_counts().iloc[0] if not df_view[col].value_counts().empty else 0
+                st.metric(
+                    f"📈 Most Common",
+                    str(mode_val)[:15],
+                    delta=f"{count} responses"
+                )
+                break
+        else:
+            st.metric("✅ Data Quality", f"{df_view.notna().sum().sum():,} answers")
 
 # ---------- Interactive Data Analysis ----------
 st.subheader("🔍 Interactive Data Analysis")
