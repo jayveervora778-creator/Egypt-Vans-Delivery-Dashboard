@@ -79,13 +79,16 @@ def _flatten_columns(columns):
 def load_excel_file(path_or_bytes):
     """Load Excel file with survey data structure support"""
     try:
-        # Load with header row 1 (where questions are)
-        df = pd.read_excel(path_or_bytes, header=1)
+        # Load raw data without headers first
+        df_raw = pd.read_excel(path_or_bytes, header=None)
         
-        # Clean up column names
+        # Extract headers from row 1 (index 1)
+        headers_row = df_raw.iloc[1].fillna('')
+        
+        # Clean and create meaningful column names
         clean_columns = []
-        for col in df.columns:
-            if pd.notna(col) and not str(col).startswith('Unnamed'):
+        for i, col in enumerate(headers_row):
+            if pd.notna(col) and str(col).strip() and not str(col).startswith('Unnamed'):
                 clean_name = str(col).strip()
                 # Shorten very long question names for better display
                 if len(clean_name) > 50:
@@ -99,9 +102,9 @@ def load_excel_file(path_or_bytes):
                     elif "employment status" in clean_name.lower():
                         clean_name = "Employment Status"
                     elif "benefits" in clean_name.lower():
-                        clean_name = "Benefits"
+                        clean_name = "Benefits Received"
                     elif "deliveries" in clean_name.lower() and "day" in clean_name.lower():
-                        clean_name = "Deliveries per day"
+                        clean_name = "Deliveries per Day"
                     elif "income" in clean_name.lower() or "salary" in clean_name.lower():
                         clean_name = "Net Income (EGP)"
                     elif "medical" in clean_name.lower() and "insurance" in clean_name.lower():
@@ -111,42 +114,61 @@ def load_excel_file(path_or_bytes):
                     elif "maintenance" in clean_name.lower():
                         clean_name = "Maintenance Costs (EGP)"
                     else:
-                        # Keep first 50 characters
-                        clean_name = clean_name[:50] + "..."
+                        # Keep first 40 characters for readability
+                        clean_name = clean_name[:40] + "..." if len(clean_name) > 40 else clean_name
                 clean_columns.append(clean_name)
             else:
-                clean_columns.append(f"Column_{len(clean_columns)}")
+                clean_columns.append(f"Column_{i}")
         
-        df.columns = clean_columns
-        
-        # Find data start row (skip header rows, look for "Respondent")
+        # Find data start row (look for "Respondent")
         data_start_row = None
-        for idx, row in df.iterrows():
-            if pd.notna(row.iloc[1]) and 'Respondent' in str(row.iloc[1]):
-                data_start_row = idx
-                break
+        for idx in range(len(df_raw)):
+            if idx < len(df_raw) and len(df_raw.columns) > 1:
+                cell_value = df_raw.iloc[idx, 1]
+                if pd.notna(cell_value) and 'Respondent' in str(cell_value):
+                    data_start_row = idx
+                    break
         
         if data_start_row is not None:
-            # Get actual data rows
-            data_df = df.iloc[data_start_row:].copy()
+            # Extract data starting from the respondent rows
+            data_df = df_raw.iloc[data_start_row:].copy()
+            
+            # Set the column names
+            if len(clean_columns) == len(data_df.columns):
+                data_df.columns = clean_columns
+            else:
+                # Fallback column naming
+                data_df.columns = [f"Column_{i}" for i in range(len(data_df.columns))]
             
             # Remove completely empty rows
             data_df = data_df.dropna(how='all')
             
-            # Clean numeric columns
-            numeric_patterns = ['age', 'deliveries', 'income', 'salary', 'expense', 'cost']
+            # Reset index
+            data_df = data_df.reset_index(drop=True)
+            
+            # Clean numeric columns - be more specific about which columns to convert
             for col in data_df.columns:
                 col_lower = col.lower()
-                if any(pattern in col_lower for pattern in numeric_patterns):
+                if any(pattern in col_lower for pattern in ['age', 'year', 'income', 'salary', 'expense', 'cost', 'deliveries']):
+                    # Convert to numeric, handling non-numeric values gracefully
                     data_df[col] = pd.to_numeric(data_df[col], errors='coerce')
             
-            return data_df
+            # Remove rows that are completely NaN after processing
+            data_df = data_df.dropna(how='all')
+            
+            if len(data_df) > 0:
+                return data_df
+            else:
+                st.error("No valid survey response data found after processing")
+                return pd.DataFrame()
         else:
-            st.error("Could not find survey response data in Excel file")
+            st.error("Could not find survey response data (looking for 'Respondent' entries)")
             return pd.DataFrame()
             
     except Exception as e:
         st.error(f"Error loading Excel file: {str(e)}")
+        import traceback
+        st.error(f"Details: {traceback.format_exc()}")
         return pd.DataFrame()
 
 # ---------- Data Loading ----------
