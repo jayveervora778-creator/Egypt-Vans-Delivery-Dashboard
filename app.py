@@ -75,7 +75,8 @@ def _flatten_columns(columns):
             flattened.append(str(col).strip())
     return flattened
 
-@st.cache_data(show_spinner="Loading data...")
+# Temporarily disable caching to avoid PyArrow issues with mixed data types
+# @st.cache_data(show_spinner="Loading data...")
 def load_excel_file(path_or_bytes):
     """Load Excel file with proper survey data structure support"""
     try:
@@ -181,7 +182,7 @@ def load_excel_file(path_or_bytes):
         data_df = data_df.reset_index(drop=True)
         data_df = data_df.dropna(how='all')
         
-        # Convert obvious numeric columns
+        # Convert obvious numeric columns with better handling of mixed data
         numeric_indicators = ['age', 'year', 'egp', 'days', 'hours', 'deliveries', 'income', 'salary', 'allowance']
         for col in data_df.columns:
             col_lower = col.lower()
@@ -195,6 +196,48 @@ def load_excel_file(path_or_bytes):
                 except:
                     pass
         
+        # Handle problematic mixed columns that cause PyArrow issues
+        # Aggressively clean the specific problematic column
+        for col in data_df.columns:
+            try:
+                if 'working with your current' in col.lower() or 'how long' in col.lower():
+                    # This is the problematic column - clean it aggressively
+                    def clean_duration_value(val):
+                        if pd.isna(val):
+                            return None
+                        val_str = str(val).strip()
+                        if val_str.lower() in ['nan', 'none', '']:
+                            return None
+                        # Extract number from mixed text like "14 months" or "5 Years"
+                        import re
+                        numbers = re.findall(r'\d+\.?\d*', val_str)
+                        if numbers:
+                            try:
+                                return float(numbers[0])
+                            except:
+                                return val_str
+                        return val_str
+                    
+                    data_df[col] = data_df[col].apply(clean_duration_value)
+                
+                # Also check for other mixed columns
+                elif data_df[col].dtype == 'object':
+                    sample_values = data_df[col].dropna().head(10)
+                    has_mixed_types = False
+                    
+                    for val in sample_values:
+                        val_str = str(val)
+                        if any(pattern in val_str.lower() for pattern in ['months', 'years', 'days']) and any(char.isdigit() for char in val_str):
+                            has_mixed_types = True
+                            break
+                    
+                    if has_mixed_types:
+                        # Convert to string consistently
+                        data_df[col] = data_df[col].astype(str)
+                        data_df[col] = data_df[col].replace('nan', None)
+            except Exception as e:
+                continue
+        
         return data_df
         
     except Exception as e:
@@ -204,6 +247,7 @@ def load_excel_file(path_or_bytes):
 # ---------- Data Loading ----------
 st.subheader("📊 Data Source")
 
+DEFAULT_CSV_PATH = "Vans_data_cleaned.csv"  # Use the cleaned CSV file
 DEFAULT_XLSX_PATH = "Vans_data_raw_new.xlsx"  # Use the corrected file
 FALLBACK_XLSX_PATH = "Vans data for dashboard.xlsx"  # Keep as fallback
 data_choice = st.radio(
@@ -215,25 +259,34 @@ data_choice = st.radio(
 df_all = pd.DataFrame()
 
 if data_choice == "📁 Use included sample file":
-    if os.path.exists(DEFAULT_XLSX_PATH):
+    # Try cleaned CSV first (avoids PyArrow issues)
+    if os.path.exists(DEFAULT_CSV_PATH):
+        try:
+            df_all = pd.read_csv(DEFAULT_CSV_PATH)
+            if not df_all.empty:
+                st.success(f"✅ Loaded clean Vans survey data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
+            else:
+                df_all = pd.DataFrame()
+        except Exception as e:
+            st.warning(f"⚠️ Issue loading cleaned CSV: {str(e)}")
+            df_all = pd.DataFrame()
+    
+    # Fallback to Excel if CSV fails
+    if df_all.empty and os.path.exists(DEFAULT_XLSX_PATH):
         df_all = load_excel_file(DEFAULT_XLSX_PATH)
         if not df_all.empty:
-            st.success(f"✅ Loaded corrected Vans survey data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
+            st.info(f"✅ Loaded Excel data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
         else:
-            st.warning("⚠️ Issue with new file, trying fallback...")
+            st.warning("⚠️ Issue with Excel file, trying fallback...")
             if os.path.exists(FALLBACK_XLSX_PATH):
                 df_all = load_excel_file(FALLBACK_XLSX_PATH)
                 if not df_all.empty:
                     st.info(f"✅ Loaded fallback data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
-    else:
-        # Try fallback file
-        if os.path.exists(FALLBACK_XLSX_PATH):
-            df_all = load_excel_file(FALLBACK_XLSX_PATH)
-            if not df_all.empty:
-                st.info(f"✅ Loaded fallback data: {len(df_all):,} respondents, {len(df_all.columns)} questions")
-        else:
-            st.info("📁 Original data file not found. Please upload your own file below.")
-            data_choice = "📤 Upload your own Excel file"
+    
+    # Final fallback
+    if df_all.empty:
+        st.info("📁 Data files not found. Please upload your own file below.")
+        data_choice = "📤 Upload your own Excel file"
 
 if data_choice == "📤 Upload your own Excel file" or df_all.empty:
     uploaded_file = st.file_uploader(
@@ -376,8 +429,7 @@ for col in df_view.columns:
     elif 'age' in col_lower:
         age_col = col
 
-# Debug info - show what columns were found (remove after testing)
-# st.write(f"DEBUG - Age column: {age_col}, Type: {df_view[age_col].dtype if age_col else 'None'}")
+# Column detection complete
 
 # KPI 1: Survey Responses
 with kpi_col1:
@@ -410,7 +462,7 @@ with kpi_col2:
             else:
                 st.metric("👥 Average Age", "No valid data")
         except Exception as e:
-            st.metric("👥 Average Age", f"Error: {str(e)[:10]}...")
+            st.metric("👥 Average Age", f"Calculation error")
     elif insurance_col:
         yes_responses = df_view[insurance_col].astype(str).str.contains('Yes|yes', na=False).mean() * 100
         st.metric(
