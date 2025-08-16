@@ -565,71 +565,180 @@ with analysis_tab3:
     # Add response-level filters
     col1, col2, col3 = st.columns(3)
     
-    # Get filterable columns (categorical with reasonable number of unique values)
+    # Get filterable columns (include categorical, numeric ranges, and important survey fields)
     filterable_cols = []
+    numeric_range_cols = []
+    
     for col in df_view.columns:
         try:
-            if df_view[col].dtype == 'object' and 2 <= df_view[col].nunique() <= 20:
-                filterable_cols.append(col)
-        except:
+            col_lower = col.lower()
+            unique_count = df_view[col].nunique()
+            non_null_count = df_view[col].count()
+            
+            # Always include key survey fields regardless of unique count
+            is_key_field = any(keyword in col_lower for keyword in [
+                'company', 'employment', 'area', 'age', 'insurance', 'status',
+                'fuel', 'cost', 'expense', 'income', 'salary', 'benefit',
+                'delivery', 'maintenance', 'vehicle', 'transport', 'overtime',
+                'leave', 'holiday', 'incentive', 'bonus', 'education', 'experience'
+            ])
+            
+            if df_view[col].dtype == 'object':
+                # Include categorical fields with reasonable unique values OR key survey fields
+                if (2 <= unique_count <= 30) or (is_key_field and unique_count <= 50):
+                    filterable_cols.append(col)
+            elif pd.api.types.is_numeric_dtype(df_view[col]) and non_null_count > 0:
+                # Include numeric fields for range filtering
+                if is_key_field or any(keyword in col_lower for keyword in [
+                    'age', 'cost', 'expense', 'income', 'salary', 'delivery', 'hour', 'day', 'year'
+                ]):
+                    numeric_range_cols.append(col)
+        except Exception as e:
             continue
     
     active_filters = {}
+    active_numeric_filters = {}
     
-    if len(filterable_cols) > 0:
+    # Combine all filterable columns for selection
+    all_filter_options = filterable_cols + [f"{col} (Range)" for col in numeric_range_cols]
+    
+    if len(all_filter_options) > 0:
         with col1:
-            if len(filterable_cols) > 0:
-                filter_col1 = st.selectbox("Filter by:", ["None"] + filterable_cols, key="response_filter1")
-                if filter_col1 != "None":
-                    unique_vals1 = sorted(df_view[filter_col1].dropna().unique())
+            filter_col1 = st.selectbox("Filter by:", ["None"] + all_filter_options, key="response_filter1")
+            if filter_col1 != "None":
+                if filter_col1.endswith(" (Range)"):
+                    # Numeric range filter
+                    actual_col = filter_col1.replace(" (Range)", "")
+                    col_data = df_view[actual_col].dropna()
+                    if len(col_data) > 0:
+                        min_val, max_val = float(col_data.min()), float(col_data.max())
+                        if min_val < max_val:
+                            range_vals = st.slider(
+                                f"Select {actual_col} range:",
+                                min_value=min_val,
+                                max_value=max_val,
+                                value=(min_val, max_val),
+                                key="range1"
+                            )
+                            active_numeric_filters[actual_col] = range_vals
+                else:
+                    # Categorical filter
+                    unique_vals1 = sorted(df_view[filter_col1].dropna().astype(str).unique())
                     selected_vals1 = st.multiselect(f"Select {filter_col1}:", unique_vals1, default=unique_vals1, key="values1")
                     if selected_vals1:
                         active_filters[filter_col1] = selected_vals1
         
         with col2:
-            if len(filterable_cols) > 1:
-                remaining_cols = [col for col in filterable_cols if col != filter_col1]
-                filter_col2 = st.selectbox("Also filter by:", ["None"] + remaining_cols, key="response_filter2")
+            if len(all_filter_options) > 1:
+                used_cols = [filter_col1] if filter_col1 != "None" else []
+                remaining_options = [opt for opt in all_filter_options if opt not in used_cols]
+                filter_col2 = st.selectbox("Also filter by:", ["None"] + remaining_options, key="response_filter2")
                 if filter_col2 != "None":
-                    unique_vals2 = sorted(df_view[filter_col2].dropna().unique())
-                    selected_vals2 = st.multiselect(f"Select {filter_col2}:", unique_vals2, default=unique_vals2, key="values2")
-                    if selected_vals2:
-                        active_filters[filter_col2] = selected_vals2
+                    if filter_col2.endswith(" (Range)"):
+                        # Numeric range filter
+                        actual_col = filter_col2.replace(" (Range)", "")
+                        col_data = df_view[actual_col].dropna()
+                        if len(col_data) > 0:
+                            min_val, max_val = float(col_data.min()), float(col_data.max())
+                            if min_val < max_val:
+                                range_vals = st.slider(
+                                    f"Select {actual_col} range:",
+                                    min_value=min_val,
+                                    max_value=max_val,
+                                    value=(min_val, max_val),
+                                    key="range2"
+                                )
+                                active_numeric_filters[actual_col] = range_vals
+                    else:
+                        # Categorical filter
+                        unique_vals2 = sorted(df_view[filter_col2].dropna().astype(str).unique())
+                        selected_vals2 = st.multiselect(f"Select {filter_col2}:", unique_vals2, default=unique_vals2, key="values2")
+                        if selected_vals2:
+                            active_filters[filter_col2] = selected_vals2
         
         with col3:
-            if len(filterable_cols) > 2:
-                remaining_cols = [col for col in filterable_cols if col not in [filter_col1, filter_col2]]
-                filter_col3 = st.selectbox("Additional filter:", ["None"] + remaining_cols, key="response_filter3")
+            if len(all_filter_options) > 2:
+                used_cols = [col for col in [filter_col1, filter_col2] if col != "None"]
+                remaining_options = [opt for opt in all_filter_options if opt not in used_cols]
+                filter_col3 = st.selectbox("Additional filter:", ["None"] + remaining_options, key="response_filter3")
                 if filter_col3 != "None":
-                    unique_vals3 = sorted(df_view[filter_col3].dropna().unique())
-                    selected_vals3 = st.multiselect(f"Select {filter_col3}:", unique_vals3, default=unique_vals3, key="values3")
-                    if selected_vals3:
-                        active_filters[filter_col3] = selected_vals3
+                    if filter_col3.endswith(" (Range)"):
+                        # Numeric range filter
+                        actual_col = filter_col3.replace(" (Range)", "")
+                        col_data = df_view[actual_col].dropna()
+                        if len(col_data) > 0:
+                            min_val, max_val = float(col_data.min()), float(col_data.max())
+                            if min_val < max_val:
+                                range_vals = st.slider(
+                                    f"Select {actual_col} range:",
+                                    min_value=min_val,
+                                    max_value=max_val,
+                                    value=(min_val, max_val),
+                                    key="range3"
+                                )
+                                active_numeric_filters[actual_col] = range_vals
+                    else:
+                        # Categorical filter
+                        unique_vals3 = sorted(df_view[filter_col3].dropna().astype(str).unique())
+                        selected_vals3 = st.multiselect(f"Select {filter_col3}:", unique_vals3, default=unique_vals3, key="values3")
+                        if selected_vals3:
+                            active_filters[filter_col3] = selected_vals3
     
     # Apply filters to get filtered responses
     filtered_responses = df_view.copy()
+    
+    # Apply categorical filters
     for filter_col, filter_vals in active_filters.items():
-        filtered_responses = filtered_responses[filtered_responses[filter_col].isin(filter_vals)]
+        filtered_responses = filtered_responses[filtered_responses[filter_col].astype(str).isin(filter_vals)]
+    
+    # Apply numeric range filters
+    for filter_col, (min_val, max_val) in active_numeric_filters.items():
+        filtered_responses = filtered_responses[
+            (filtered_responses[filter_col] >= min_val) & 
+            (filtered_responses[filter_col] <= max_val)
+        ]
     
     # Display filtering summary
     st.write(f"**Showing {len(filtered_responses)} of {len(df_view)} survey responses**")
     
-    if len(active_filters) > 0:
-        filter_summary = ", ".join([f"{col}: {len(vals)} selected" for col, vals in active_filters.items()])
-        st.caption(f"Active filters: {filter_summary}")
+    if len(active_filters) > 0 or len(active_numeric_filters) > 0:
+        filter_parts = []
+        
+        # Categorical filters
+        for col, vals in active_filters.items():
+            filter_parts.append(f"{col}: {len(vals)} selected")
+        
+        # Numeric range filters  
+        for col, (min_val, max_val) in active_numeric_filters.items():
+            filter_parts.append(f"{col}: {min_val:.1f}-{max_val:.1f}")
+        
+        if filter_parts:
+            filter_summary = ", ".join(filter_parts)
+            st.caption(f"Active filters: {filter_summary}")
     
     # Column selection for display
     st.write("**Select columns to display:**")
     
-    # Smart default column selection
+    # Smart default column selection - include more survey fields
     default_cols = []
+    priority_keywords = ['respondent', 'age', 'company', 'employment', 'area']
+    secondary_keywords = ['income', 'deliveries', 'fuel', 'cost', 'expense', 'insurance', 'benefit', 'salary']
+    
+    # First pass: high priority columns
     for col in filtered_responses.columns:
         col_lower = col.lower()
-        if any(keyword in col_lower for keyword in ['respondent', 'age', 'company', 'employment', 'area', 'income', 'deliveries']):
+        if any(keyword in col_lower for keyword in priority_keywords):
             default_cols.append(col)
     
-    # Limit to first 8 columns to avoid overwhelming display
-    default_cols = default_cols[:8]
+    # Second pass: secondary important columns
+    for col in filtered_responses.columns:
+        if col not in default_cols:
+            col_lower = col.lower()
+            if any(keyword in col_lower for keyword in secondary_keywords):
+                default_cols.append(col)
+    
+    # Limit to first 10 columns to avoid overwhelming display
+    default_cols = default_cols[:10]
     
     selected_columns = st.multiselect(
         "Choose columns to show in responses:",
