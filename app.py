@@ -532,7 +532,10 @@ with summary_col2:
     st.write("**Dataset Information:**")
     st.metric("📊 Total Records", f"{len(df_view):,}")
     st.metric("📋 Columns", len(df_view.columns))
-    st.metric("🔍 Filtered Data", f"{(len(df_view)/len(df_all)*100):.1f}%")
+    if len(df_all) > 0:
+        st.metric("🔍 Filtered Data", f"{(len(df_view)/len(df_all)*100):.1f}%")
+    else:
+        st.metric("🔍 Filtered Data", "100%")
     
     # Download button for filtered data
     csv = df_view.to_csv(index=False)
