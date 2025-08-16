@@ -534,11 +534,14 @@ with analysis_tab1:
     numeric_cols.extend(additional_numeric)
     
     if len(numeric_cols) > 0 and len(categorical_cols) > 0:
-        # Improved responsive layout for dropdowns
+        # Enhanced 3-dropdown layout for more detailed analysis
+        st.write("**Enhanced Multi-Dimensional Analysis:**")
+        
+        # First row: Primary analysis settings
         col1, col2, col3 = st.columns([1.2, 1.2, 0.8])
         
         with col1:
-            # Truncate long column names for better display
+            # Primary grouping column
             display_categorical = []
             for col in categorical_cols:
                 if len(col) > 30:
@@ -548,15 +551,15 @@ with analysis_tab1:
                 display_categorical.append(display_name)
             
             selected_idx = st.selectbox(
-                "📂 Group by:",
+                "📂 Primary Group by:",
                 range(len(categorical_cols) + 1),
                 format_func=lambda x: "None" if x == 0 else display_categorical[x-1],
-                help="Select a categorical column to group the analysis by"
+                help="Select the main categorical column to group the analysis by"
             )
             group_by = "None" if selected_idx == 0 else categorical_cols[selected_idx-1]
             
         with col2:
-            # Truncate long column names for better display  
+            # Numeric column to analyze
             display_numeric = []
             for col in numeric_cols:
                 if len(col) > 30:
@@ -580,6 +583,38 @@ with analysis_tab1:
                 help="Select the aggregation function to apply"
             )
         
+        # Second row: Secondary analysis options
+        st.write("")
+        col4, col5, col6 = st.columns([1.2, 1.2, 0.8])
+        
+        with col4:
+            # Secondary grouping (optional)
+            secondary_selected_idx = st.selectbox(
+                "📂 Secondary Group by (Optional):",
+                range(len(categorical_cols) + 1),
+                format_func=lambda x: "None" if x == 0 else display_categorical[x-1],
+                help="Select an additional categorical column for cross-tabulation analysis"
+            )
+            secondary_group_by = "None" if secondary_selected_idx == 0 else categorical_cols[secondary_selected_idx-1]
+            
+        with col5:
+            # Filter options
+            filter_options = ["No Filter", "Top 5 Values", "Bottom 5 Values", "Above Average", "Below Average"]
+            result_filter = st.selectbox(
+                "🔍 Result Filter:",
+                filter_options,
+                help="Apply filters to the analysis results"
+            )
+            
+        with col6:
+            # Chart type selection
+            chart_types = ["Bar Chart", "Line Chart", "Scatter Plot", "Box Plot"]
+            chart_type = st.selectbox(
+                "📈 Chart Type:",
+                chart_types,
+                help="Select visualization type for the results"
+            )
+        
         if group_by != "None" and analyze_col:
             try:
                 # Ensure the analyze column is properly numeric
@@ -589,31 +624,70 @@ with analysis_tab1:
                     df_analysis[analyze_col] = pd.to_numeric(df_analysis[analyze_col], errors='coerce')
                 
                 # Remove rows where analyze_col is NaN after conversion
-                df_analysis = df_analysis.dropna(subset=[analyze_col, group_by])
+                required_cols = [analyze_col, group_by]
+                if secondary_group_by != "None" and secondary_group_by != group_by:
+                    required_cols.append(secondary_group_by)
+                
+                df_analysis = df_analysis.dropna(subset=required_cols)
                 
                 # Check if we have data after cleaning
                 if len(df_analysis) == 0:
                     st.warning(f"⚠️ No valid numeric data found in '{analyze_col}' column after filtering.")
                 else:
-                    # Perform aggregation on cleaned data
-                    if agg_function == "mean":
-                        result = df_analysis.groupby(group_by)[analyze_col].mean().reset_index()
-                    elif agg_function == "sum":
-                        result = df_analysis.groupby(group_by)[analyze_col].sum().reset_index()
-                    elif agg_function == "count":
-                        result = df_analysis.groupby(group_by)[analyze_col].count().reset_index()
-                    elif agg_function == "min":
-                        result = df_analysis.groupby(group_by)[analyze_col].min().reset_index()
-                    elif agg_function == "max":
-                        result = df_analysis.groupby(group_by)[analyze_col].max().reset_index()
-                    else:  # std
-                        result = df_analysis.groupby(group_by)[analyze_col].std().reset_index()
+                    # Perform primary analysis
+                    if secondary_group_by != "None" and secondary_group_by != group_by:
+                        # Multi-dimensional analysis with secondary grouping
+                        if agg_function == "mean":
+                            result = df_analysis.groupby([group_by, secondary_group_by])[analyze_col].mean().reset_index()
+                        elif agg_function == "sum":
+                            result = df_analysis.groupby([group_by, secondary_group_by])[analyze_col].sum().reset_index()
+                        elif agg_function == "count":
+                            result = df_analysis.groupby([group_by, secondary_group_by])[analyze_col].count().reset_index()
+                        elif agg_function == "min":
+                            result = df_analysis.groupby([group_by, secondary_group_by])[analyze_col].min().reset_index()
+                        elif agg_function == "max":
+                            result = df_analysis.groupby([group_by, secondary_group_by])[analyze_col].max().reset_index()
+                        else:  # std
+                            result = df_analysis.groupby([group_by, secondary_group_by])[analyze_col].std().reset_index()
+                        
+                        result.columns = [group_by, secondary_group_by, f"{agg_function.title()} of {analyze_col}"]
+                        
+                    else:
+                        # Single dimension analysis
+                        if agg_function == "mean":
+                            result = df_analysis.groupby(group_by)[analyze_col].mean().reset_index()
+                        elif agg_function == "sum":
+                            result = df_analysis.groupby(group_by)[analyze_col].sum().reset_index()
+                        elif agg_function == "count":
+                            result = df_analysis.groupby(group_by)[analyze_col].count().reset_index()
+                        elif agg_function == "min":
+                            result = df_analysis.groupby(group_by)[analyze_col].min().reset_index()
+                        elif agg_function == "max":
+                            result = df_analysis.groupby(group_by)[analyze_col].max().reset_index()
+                        else:  # std
+                            result = df_analysis.groupby(group_by)[analyze_col].std().reset_index()
+                        
+                        result.columns = [group_by, f"{agg_function.title()} of {analyze_col}"]
                     
-                    # Ensure result has proper column names
-                    result.columns = [group_by, f"{agg_function.title()} of {analyze_col}"]
+                    # Apply result filters
+                    if result_filter != "No Filter" and len(result) > 0:
+                        value_col = result.columns[-1]  # Last column is the calculated value
+                        if result_filter == "Top 5 Values":
+                            result = result.nlargest(5, value_col)
+                        elif result_filter == "Bottom 5 Values":
+                            result = result.nsmallest(5, value_col)
+                        elif result_filter == "Above Average":
+                            avg_val = result[value_col].mean()
+                            result = result[result[value_col] > avg_val]
+                        elif result_filter == "Below Average":
+                            avg_val = result[value_col].mean()
+                            result = result[result[value_col] < avg_val]
                     
                     # Debug info
-                    st.caption(f"📊 Analysis: {len(df_analysis)} records → {len(result)} groups")
+                    if secondary_group_by != "None" and secondary_group_by != group_by:
+                        st.caption(f"📊 Multi-dimensional Analysis: {len(df_analysis)} records → {len(result)} combinations")
+                    else:
+                        st.caption(f"📊 Analysis: {len(df_analysis)} records → {len(result)} groups")
                     
                     # Add some spacing for better alignment
                     st.write("")
@@ -629,8 +703,8 @@ with analysis_tab1:
                     
                     with col2:
                         if len(result) > 0:
-                            # Create the bar chart with aggregated data
-                            y_col = f"{agg_function.title()} of {analyze_col}"
+                            # Get the value column (last column)
+                            y_col = result.columns[-1]
                             
                             # Create shorter, cleaner title to prevent cramming
                             short_analyze_col = analyze_col[:20] + "..." if len(analyze_col) > 20 else analyze_col
@@ -639,56 +713,119 @@ with analysis_tab1:
                             st.write("**📈 Visualization**")
                             # Add padding for alignment
                             st.write("")
-                            fig = px.bar(
-                                result,
-                                x=group_by,
-                                y=y_col,
-                                title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by}",
-                                color=y_col,
-                                color_continuous_scale="viridis",
-                                text=y_col,  # Use column name for text
-                                hover_data={y_col: ':.2f'}  # Show 2 decimals on hover
-                            )
                             
-                            # Format text labels to show values clearly
-                            if agg_function in ["mean", "std"]:
-                                # For decimal values
-                                fig.update_traces(
-                                    texttemplate='%{text:.2f}',
-                                    textposition='outside',
-                                    textfont_size=10
-                                )
+                            # Handle multi-dimensional vs single-dimensional visualization
+                            if secondary_group_by != "None" and secondary_group_by != group_by:
+                                # Multi-dimensional chart
+                                if chart_type == "Bar Chart":
+                                    fig = px.bar(
+                                        result,
+                                        x=group_by,
+                                        y=y_col,
+                                        color=secondary_group_by,
+                                        title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by} & {secondary_group_by[:15]}",
+                                        barmode='group'
+                                    )
+                                elif chart_type == "Line Chart":
+                                    fig = px.line(
+                                        result,
+                                        x=group_by,
+                                        y=y_col,
+                                        color=secondary_group_by,
+                                        title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by} & {secondary_group_by[:15]}",
+                                        markers=True
+                                    )
+                                else:  # Default to bar for multi-dimensional
+                                    fig = px.bar(
+                                        result,
+                                        x=group_by,
+                                        y=y_col,
+                                        color=secondary_group_by,
+                                        title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by} & {secondary_group_by[:15]}",
+                                        barmode='group'
+                                    )
                             else:
-                                # For integers (count, sum, min, max)
-                                fig.update_traces(
-                                    texttemplate='%{text:.0f}',
-                                    textposition='outside', 
-                                    textfont_size=10
-                                )
+                                # Single-dimensional chart with different chart types
+                                if chart_type == "Bar Chart":
+                                    fig = px.bar(
+                                        result,
+                                        x=group_by,
+                                        y=y_col,
+                                        title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by}",
+                                        color=y_col,
+                                        color_continuous_scale="viridis",
+                                        text=y_col
+                                    )
+                                elif chart_type == "Line Chart":
+                                    fig = px.line(
+                                        result,
+                                        x=group_by,
+                                        y=y_col,
+                                        title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by}",
+                                        markers=True
+                                    )
+                                elif chart_type == "Scatter Plot":
+                                    # For scatter, use index as x if only one grouping
+                                    fig = px.scatter(
+                                        result,
+                                        x=group_by,
+                                        y=y_col,
+                                        title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by}",
+                                        size=y_col,
+                                        color=y_col
+                                    )
+                                else:  # Box Plot - need original data
+                                    try:
+                                        fig = px.box(
+                                            df_analysis,
+                                            x=group_by,
+                                            y=analyze_col,
+                                            title=f"Distribution of {short_analyze_col}<br>by {short_group_by}"
+                                        )
+                                    except:
+                                        # Fallback to bar chart if box plot fails
+                                        fig = px.bar(
+                                            result,
+                                            x=group_by,
+                                            y=y_col,
+                                            title=f"{agg_function.title()} of {short_analyze_col}<br>by {short_group_by}",
+                                            color=y_col,
+                                            color_continuous_scale="viridis"
+                                        )
                             
-                            # Update layout for better appearance with text wrapping
+                            # Common formatting for all chart types
+                            if chart_type == "Bar Chart" and secondary_group_by == "None":
+                                # Add text labels for single-dimension bar charts
+                                if agg_function in ["mean", "std"]:
+                                    fig.update_traces(
+                                        texttemplate='%{text:.2f}',
+                                        textposition='outside',
+                                        textfont_size=10
+                                    )
+                                else:
+                                    fig.update_traces(
+                                        texttemplate='%{text:.0f}',
+                                        textposition='outside', 
+                                        textfont_size=10
+                                    )
+                            
+                            # Update layout for better appearance
                             fig.update_layout(
                                 xaxis_tickangle=-45,
-                                yaxis_title=f"{agg_function.title()}",
+                                yaxis_title=f"{agg_function.title()} Value",
                                 title_font_size=14,
-                                showlegend=False,
                                 margin=dict(t=60, b=80, l=60, r=20),
                                 height=320,
                                 xaxis_title_font_size=12,
                                 yaxis_title_font_size=12
                             )
                             
-                            # Handle long category names to prevent cramming
+                            # Handle long category names
                             fig.update_xaxes(
                                 tickangle=-45,
                                 tickfont_size=10,
                                 title_standoff=25
                             )
-                            
-                            # Adjust y-axis range to accommodate text labels
-                            max_val = result[y_col].max()
-                            if pd.notna(max_val):
-                                fig.update_yaxes(range=[0, max_val * 1.15])
                             
                             st.plotly_chart(fig, use_container_width=True)
                         else:
@@ -1238,59 +1375,229 @@ with viz_tab1:
             st.info("No valid age data found for visualization")
 
 with viz_tab2:
-    col1, col2 = st.columns(2)
+    st.write("**Compare key metrics across different dimensions:**")
+    st.write("")
     
-    with col1:
-        # Deliveries by Company
+    # Enhanced comparison charts with multiple options
+    chart_row1_col1, chart_row1_col2 = st.columns(2)
+    
+    with chart_row1_col1:
+        # Fix deliveries by company detection
         company_col = None
         deliveries_col = None
         
+        # Better column detection for company
         for col in df_view.columns:
-            if "company" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
+            if "company" in col.lower():
                 company_col = col
-            elif "deliveries" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
-                deliveries_col = col
+                break
         
-        if company_col and deliveries_col and len(df_view[company_col].dropna()) > 0:
+        # Better column detection for deliveries - look for the actual column name pattern
+        for col in df_view.columns:
+            col_lower = col.lower()
+            if ("deliveries" in col_lower and "per day" in col_lower) or ("average" in col_lower and "deliveries" in col_lower):
+                deliveries_col = col
+                break
+        
+        if company_col and deliveries_col:
             try:
-                fig = px.box(
-                    df_view,
-                    x=company_col,
-                    y=deliveries_col,
-                    title="Deliveries per Day by Company"
-                )
-                fig.update_layout(xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
+                # Convert to numeric for analysis
+                df_chart = df_view.copy()
+                df_chart[deliveries_col] = pd.to_numeric(df_chart[deliveries_col], errors='coerce')
+                
+                # Remove NaN values
+                df_chart = df_chart.dropna(subset=[deliveries_col, company_col])
+                
+                if len(df_chart) > 0:
+                    fig = px.box(
+                        df_chart,
+                        x=company_col,
+                        y=deliveries_col,
+                        title="Daily Deliveries by Company",
+                        color=company_col
+                    )
+                    fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No valid deliveries data after cleaning")
             except Exception as e:
-                st.error(f"Error creating company/deliveries chart: {str(e)}")
+                st.error(f"Error creating deliveries chart: {str(e)}")
         else:
-            st.info("No valid company or deliveries data found for visualization")
+            st.info("Deliveries or company data not found for comparison")
     
-    with col2:
-        # Income by Employment Status
-        income_col = None
+    with chart_row1_col2:
+        # Working Hours by Employment Status
         employment_col = None
+        hours_col = None
         
         for col in df_view.columns:
-            if "income" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
-                income_col = col
-            elif "employment" in col.lower() and not col.endswith(('_1', '_2', '_3', '_4', '_5', '_6')):
+            if "employment" in col.lower() and "status" in col.lower():
                 employment_col = col
+                break
         
-        if income_col and employment_col and len(df_view[income_col].dropna()) > 0:
+        for col in df_view.columns:
+            col_lower = col.lower()
+            if ("working" in col_lower and "hours" in col_lower) or ("hours" in col_lower and "per day" in col_lower):
+                hours_col = col
+                break
+        
+        if employment_col and hours_col:
             try:
-                fig = px.violin(
-                    df_view,
-                    x=employment_col,
-                    y=income_col,
-                    title="Income Distribution by Employment Status"
-                )
-                fig.update_layout(xaxis_tickangle=-45)
-                st.plotly_chart(fig, use_container_width=True)
+                df_chart = df_view.copy()
+                df_chart[hours_col] = pd.to_numeric(df_chart[hours_col], errors='coerce')
+                df_chart = df_chart.dropna(subset=[hours_col, employment_col])
+                
+                if len(df_chart) > 0:
+                    fig = px.violin(
+                        df_chart,
+                        x=employment_col,
+                        y=hours_col,
+                        title="Working Hours by Employment Status",
+                        color=employment_col
+                    )
+                    fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No valid working hours data after cleaning")
             except Exception as e:
-                st.error(f"Error creating income chart: {str(e)}")
+                st.error(f"Error creating working hours chart: {str(e)}")
         else:
-            st.info("No valid income or employment data found for visualization")
+            st.info("Working hours or employment data not found")
+    
+    # Second row of comparison charts
+    chart_row2_col1, chart_row2_col2 = st.columns(2)
+    
+    with chart_row2_col1:
+        # Fuel Costs by Company
+        fuel_cost_col = None
+        
+        for col in df_view.columns:
+            col_lower = col.lower()
+            if ("fuel" in col_lower and "cost" in col_lower) or ("fuel" in col_lower and "egp" in col_lower):
+                fuel_cost_col = col
+                break
+        
+        if company_col and fuel_cost_col:
+            try:
+                df_chart = df_view.copy()
+                df_chart[fuel_cost_col] = pd.to_numeric(df_chart[fuel_cost_col], errors='coerce')
+                df_chart = df_chart.dropna(subset=[fuel_cost_col, company_col])
+                
+                if len(df_chart) > 0:
+                    fig = px.bar(
+                        df_chart.groupby(company_col)[fuel_cost_col].mean().reset_index(),
+                        x=company_col,
+                        y=fuel_cost_col,
+                        title="Average Monthly Fuel Costs by Company",
+                        color=company_col
+                    )
+                    fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+                    fig.update_traces(texttemplate='%{y:.0f} EGP', textposition='outside')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No valid fuel cost data after cleaning")
+            except Exception as e:
+                st.error(f"Error creating fuel costs chart: {str(e)}")
+        else:
+            st.info("Fuel cost data not found for comparison")
+    
+    with chart_row2_col2:
+        # Vehicle Type Distribution
+        vehicle_col = None
+        
+        for col in df_view.columns:
+            col_lower = col.lower()
+            if "vehicle" in col_lower and "type" in col_lower:
+                vehicle_col = col
+                break
+        
+        if vehicle_col:
+            try:
+                df_chart = df_view.dropna(subset=[vehicle_col])
+                if len(df_chart) > 0:
+                    vehicle_counts = df_chart[vehicle_col].value_counts()
+                    fig = px.pie(
+                        values=vehicle_counts.values,
+                        names=vehicle_counts.index,
+                        title="Vehicle Type Distribution"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No valid vehicle type data")
+            except Exception as e:
+                st.error(f"Error creating vehicle type chart: {str(e)}")
+        else:
+            st.info("Vehicle type data not found")
+    
+    # Third row - Additional comparison charts
+    chart_row3_col1, chart_row3_col2 = st.columns(2)
+    
+    with chart_row3_col1:
+        # Success Rate by Company
+        success_rate_col = None
+        
+        for col in df_view.columns:
+            col_lower = col.lower()
+            if ("success" in col_lower and "rate" in col_lower) or ("delivery" in col_lower and "success" in col_lower):
+                success_rate_col = col
+                break
+        
+        if company_col and success_rate_col:
+            try:
+                df_chart = df_view.copy()
+                df_chart[success_rate_col] = pd.to_numeric(df_chart[success_rate_col], errors='coerce')
+                df_chart = df_chart.dropna(subset=[success_rate_col, company_col])
+                
+                if len(df_chart) > 0:
+                    avg_success = df_chart.groupby(company_col)[success_rate_col].mean().reset_index()
+                    fig = px.bar(
+                        avg_success,
+                        x=company_col,
+                        y=success_rate_col,
+                        title="Average Delivery Success Rate by Company",
+                        color=company_col
+                    )
+                    fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+                    fig.update_traces(texttemplate='%{y:.1f}%', textposition='outside')
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No valid success rate data after cleaning")
+            except Exception as e:
+                st.error(f"Error creating success rate chart: {str(e)}")
+        else:
+            st.info("Success rate data not found for comparison")
+    
+    with chart_row3_col2:
+        # Age Distribution by Company
+        age_col = None
+        
+        for col in df_view.columns:
+            if "age" in col.lower():
+                age_col = col
+                break
+        
+        if company_col and age_col:
+            try:
+                df_chart = df_view.copy()
+                df_chart[age_col] = pd.to_numeric(df_chart[age_col], errors='coerce')
+                df_chart = df_chart.dropna(subset=[age_col, company_col])
+                
+                if len(df_chart) > 0:
+                    fig = px.box(
+                        df_chart,
+                        x=company_col,
+                        y=age_col,
+                        title="Age Distribution by Company",
+                        color=company_col
+                    )
+                    fig.update_layout(xaxis_tickangle=-45, showlegend=False)
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.info("No valid age data after cleaning")
+            except Exception as e:
+                st.error(f"Error creating age distribution chart: {str(e)}")
+        else:
+            st.info("Age data not found for comparison")
 
 with viz_tab3:
     # Correlation heatmap
