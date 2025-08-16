@@ -4,4 +4,4 @@ openpyxl
 plotly
 reportlab
 kaleido
-pivottablejs
+numpy

@@ -4,8 +4,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.io as pio
-from pivottablejs import pivot_ui
-import streamlit.components.v1 as components
+import numpy as np
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Image
 from reportlab.lib.styles import getSampleStyleSheet
@@ -103,29 +102,108 @@ if "Employment Status" in df_view.columns:
     mode = df_view["Employment Status"].mode()[0] if not df_view["Employment Status"].empty else "N/A"
     col4.metric("Most Common Employment", mode)
 
-# ---------- Preset Pivots ----------
-st.subheader("🔖 Quick Pivot Presets")
-preset = st.selectbox("Select a preset:", [
+# ---------- Data Preview ----------
+st.subheader("📋 Data Preview")
+st.write(f"**Showing {len(df_view):,} records** (filtered from {len(df_all):,} total)")
+
+# Show basic info
+col1, col2, col3 = st.columns(3)
+with col1:
+    st.metric("Total Records", f"{len(df_view):,}")
+with col2:
+    st.metric("Total Columns", len(df_view.columns))
+with col3:
+    st.metric("Data Coverage", f"{(len(df_view)/len(df_all)*100):.1f}%")
+
+# Show first few rows
+with st.expander("View Sample Data", expanded=False):
+    st.dataframe(df_view.head(10), use_container_width=True)
+
+# ---------- Interactive Data Analysis ----------
+st.subheader("📊 Interactive Data Analysis")
+
+# Custom pivot table functionality
+st.write("**Create your own data summary:**")
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    index_col = st.selectbox("Group by (Rows):", ["None"] + list(df_view.columns))
+with col2:
+    value_col = st.selectbox("Analyze (Values):", ["None"] + [col for col in df_view.columns if df_view[col].dtype in ['int64', 'float64']])
+with col3:
+    agg_func = st.selectbox("Function:", ["mean", "sum", "count", "min", "max"])
+
+if index_col != "None" and value_col != "None":
+    try:
+        if agg_func == "count":
+            pivot_result = df_view.groupby(index_col)[value_col].count().reset_index()
+        elif agg_func == "mean":
+            pivot_result = df_view.groupby(index_col)[value_col].mean().reset_index()
+        elif agg_func == "sum":
+            pivot_result = df_view.groupby(index_col)[value_col].sum().reset_index()
+        elif agg_func == "min":
+            pivot_result = df_view.groupby(index_col)[value_col].min().reset_index()
+        else:  # max
+            pivot_result = df_view.groupby(index_col)[value_col].max().reset_index()
+            
+        pivot_result.columns = [index_col, f"{agg_func.title()} of {value_col}"]
+        
+        st.subheader(f"📋 {agg_func.title()} of {value_col} by {index_col}")
+        st.dataframe(pivot_result, use_container_width=True)
+        
+        # Create a chart from pivot result
+        fig = px.bar(pivot_result, 
+                    x=index_col, 
+                    y=f"{agg_func.title()} of {value_col}",
+                    title=f"{agg_func.title()} of {value_col} by {index_col}")
+        st.plotly_chart(fig, use_container_width=True)
+        
+    except Exception as e:
+        st.error(f"Analysis error: {e}")
+else:
+    st.info("👆 Select both 'Group by' and 'Analyze' fields to create a summary table.")
+
+# ---------- Quick Preset Analysis ----------
+st.subheader("🔖 Quick Analysis Presets")
+preset = st.selectbox("Select a preset analysis:", [
     "None",
-    "Employment Status × Benefits",
+    "Employment Status × Medical Insurance",
     "Company × Avg Deliveries",
     "Areas Covered × Avg Net Income",
-    "Company × Bicycle Ownership",
-    "Employment Status × Overtime Pay",
-    "Company × Ramadan Incentives"
+    "Company × Count of Employees",
+    "Employment Status × Avg Income",
+    "Age Groups × Employment Status"
 ])
-if preset != "None":
-    st.info(f"Preset '{preset}' loaded. Adjust further in the pivot below.")
 
-# ---------- Pivot ----------
-st.subheader("📊 Pivot Table")
-try:
-    pivot_ui(df_view, outfile_path="pivottable.html")
-    with open("pivottable.html", "r", encoding="utf-8") as f:
-        html = f.read()
-    components.html(html, height=800, scrolling=True)
-except Exception as e:
-    st.error(f"Pivot error: {e}")
+if preset != "None":
+    st.info(f"Showing preset: '{preset}'")
+    
+    if preset == "Employment Status × Medical Insurance" and "Employment Status" in df_view.columns and "Medical Insurance" in df_view.columns:
+        cross_tab = pd.crosstab(df_view["Employment Status"], df_view["Medical Insurance"], margins=True)
+        st.dataframe(cross_tab, use_container_width=True)
+        
+    elif preset == "Company × Avg Deliveries" and "Company" in df_view.columns and "Deliveries per day" in df_view.columns:
+        company_deliveries = df_view.groupby("Company")["Deliveries per day"].mean().reset_index()
+        st.dataframe(company_deliveries, use_container_width=True)
+        
+    elif preset == "Areas Covered × Avg Net Income" and "Areas Covered" in df_view.columns and "Net Income (Gross - All Expenses) (EGP)" in df_view.columns:
+        area_income = df_view.groupby("Areas Covered")["Net Income (Gross - All Expenses) (EGP)"].mean().reset_index()
+        st.dataframe(area_income, use_container_width=True)
+        
+    elif preset == "Company × Count of Employees" and "Company" in df_view.columns:
+        company_count = df_view["Company"].value_counts().reset_index()
+        company_count.columns = ["Company", "Count"]
+        st.dataframe(company_count, use_container_width=True)
+        
+    elif preset == "Employment Status × Avg Income" and "Employment Status" in df_view.columns and "Net Income (Gross - All Expenses) (EGP)" in df_view.columns:
+        emp_income = df_view.groupby("Employment Status")["Net Income (Gross - All Expenses) (EGP)"].mean().reset_index()
+        st.dataframe(emp_income, use_container_width=True)
+        
+    elif preset == "Age Groups × Employment Status" and "Age (Years)" in df_view.columns and "Employment Status" in df_view.columns:
+        df_view_copy = df_view.copy()
+        df_view_copy["Age Group"] = pd.cut(df_view_copy["Age (Years)"], bins=[0, 25, 35, 45, 100], labels=["18-25", "26-35", "36-45", "46+"])
+        age_emp = pd.crosstab(df_view_copy["Age Group"], df_view_copy["Employment Status"], margins=True)
+        st.dataframe(age_emp, use_container_width=True)
 
 # ---------- Visual Analytics ----------
 st.subheader("📈 Visual Analytics")
