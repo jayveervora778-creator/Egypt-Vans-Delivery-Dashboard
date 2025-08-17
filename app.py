@@ -1,15 +1,17 @@
-import os, io, tempfile, datetime
+import os
+import io
+import tempfile
+import datetime
 import streamlit as st
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
 
+# Configure Streamlit page
 st.set_page_config(page_title="Vans Interactive Dashboard", layout="wide", page_icon="🚐")
 
-# Disable PyArrow conversion in Streamlit to prevent conversion errors
-import streamlit as st
-import os
+# Disable PyArrow conversion to prevent conversion errors
 os.environ['STREAMLIT_DISABLE_DATAFRAME_ARROW_CONVERSION'] = '1'
 
 # Custom CSS for better styling
