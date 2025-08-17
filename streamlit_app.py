@@ -14,26 +14,127 @@ st.set_page_config(page_title="Vans Interactive Dashboard", layout="wide", page_
 # Disable PyArrow conversion to prevent conversion errors
 os.environ['STREAMLIT_DISABLE_DATAFRAME_ARROW_CONVERSION'] = '1'
 
-# Custom CSS for better styling
+# Custom CSS for light theme and better styling
 st.markdown("""
 <style>
+    /* Force light theme */
+    .stApp {
+        background-color: #ffffff !important;
+        color: #262730 !important;
+    }
+    
+    /* Main content area */
+    .main {
+        background-color: #ffffff !important;
+        color: #262730 !important;
+    }
+    
     .main > div {
         padding-top: 2rem;
+        background-color: #ffffff !important;
     }
+    
+    /* Sidebar styling */
+    .css-1d391kg {
+        background-color: #f8f9fa !important;
+    }
+    
+    /* Text elements */
+    .stMarkdown, .stText, p, div, span {
+        color: #262730 !important;
+    }
+    
+    /* Headers */
+    h1, h2, h3, h4, h5, h6 {
+        color: #262730 !important;
+    }
+    
+    /* Metrics styling */
     .stMetric {
-        background-color: #f0f2f6;
+        background-color: #f0f2f6 !important;
         border: 1px solid #e0e0e0;
         padding: 1rem;
         border-radius: 0.5rem;
         box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        color: #262730 !important;
     }
+    
+    .stMetric label {
+        color: #666666 !important;
+    }
+    
+    .stMetric div[data-testid="metric-value"] {
+        color: #262730 !important;
+    }
+    
+    /* Dashboard header */
     .dashboard-header {
         background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
         padding: 2rem;
         border-radius: 1rem;
-        color: white;
+        color: white !important;
         text-align: center;
         margin-bottom: 2rem;
+    }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #f8f9fa !important;
+        border-radius: 0.5rem;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background-color: #ffffff !important;
+        color: #262730 !important;
+        border-radius: 0.5rem;
+        margin: 0.2rem;
+        border: 1px solid #e0e0e0;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background-color: #667eea !important;
+        color: white !important;
+    }
+    
+    /* Selectbox and input styling */
+    .stSelectbox > div > div {
+        background-color: #ffffff !important;
+        color: #262730 !important;
+        border: 1px solid #e0e0e0 !important;
+    }
+    
+    .stTextInput > div > div > input {
+        background-color: #ffffff !important;
+        color: #262730 !important;
+        border: 1px solid #e0e0e0 !important;
+    }
+    
+    /* Dataframe styling */
+    .stDataFrame {
+        background-color: #ffffff !important;
+    }
+    
+    /* Button styling */
+    .stButton > button {
+        border: 1px solid #e0e0e0;
+        color: #262730 !important;
+        background-color: #ffffff !important;
+    }
+    
+    .stButton > button:hover {
+        background-color: #f8f9fa !important;
+        border-color: #667eea !important;
+    }
+    
+    /* Charts background */
+    .js-plotly-plot {
+        background-color: #ffffff !important;
+    }
+    
+    /* Override any dark theme remnants */
+    [data-theme="dark"] {
+        background-color: #ffffff !important;
+        color: #262730 !important;
     }
 </style>
 """, unsafe_allow_html=True)
